@@ -2,9 +2,9 @@
   "name": "real_aollab",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "start:yjs": "node yjs-server.mjs"
