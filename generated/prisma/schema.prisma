@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Otp {
+  id        Int      @id @default(autoincrement())
+  otpHash   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  email String
+  user  User   @relation(fields: [email], references: [email], onDelete: Cascade)
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  password     String
+  isVerified   Boolean  @default(false)
+  refreshToken String?
+  isOnline     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  otps     Otp[]
+  projects Project[]      @relation("ProjectOwner")
+  shared   Collaborator[]
+}
+
+model Project {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  ownerId String
+  owner   User   @relation("ProjectOwner", fields: [ownerId], references: [id])
+
+  template String @default("react-vite")
+  language String @default("typescript")
+
+  isPublic Boolean @default(false)
+
+  files         File[]
+  collaborators Collaborator[]
+  envVars       EnvVariable[]
+
+  icon  String?
+  color String? @default("#3B82F6")
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastOpenedAt DateTime?
+
+  @@index([ownerId])
+}
+
+model Collaborator {
+  id String @id @default(cuid())
+
+  projectId String
+  userId    String
+
+  role Role @default(VIEWER)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model File {
+  id       String   @id @default(cuid())
+  name     String
+  path     String
+  type     NodeType
+  language String?
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  content FileContent?
+
+  parentId String?
+  parent   File?   @relation("FolderChildren", fields: [parentId], references: [id])
+  children File[]  @relation("FolderChildren")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([parentId])
+}
+
+model FileContent {
+  id String @id @default(cuid())
+
+  fileId String @unique
+  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  content String @db.Text
+}
+
+model EnvVariable {
+  id String @id @default(cuid())
+
+  key    String
+  value  String
+  secret Boolean @default(true)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, key])
+  @@index([projectId])
+}
+
+enum Role {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum NodeType {
+  FILE
+  FOLDER
+}
