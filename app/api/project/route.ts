@@ -1,6 +1,10 @@
+
 import { prisma } from "@/lib/prisma";
 import { VerifyAccessToken } from "@/lib/verify";
-import { createProjectWorkspace } from "@/src/lib/defaultProject";
+import {
+  createProjectWorkspace,
+  generateProjectFiles,
+} from "@/src/lib/defaultProject";
 import { uploadProjectToSupabase } from "@/lib/uploadProject";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -14,8 +18,7 @@ export async function POST(req: NextRequest) {
 
     const cookieStore = await cookies();
 
-    const token =
-      cookieStore.get("accessToken")?.value;
+    const token = cookieStore.get("accessToken")?.value;
 
     if (!token) {
       return NextResponse.json(
@@ -47,9 +50,15 @@ export async function POST(req: NextRequest) {
     // REQUEST BODY
     // -----------------------------------------
 
-    const { projectName } = await req.json();
+    const body = await req.json();
 
-    if (!projectName) {
+    const { projectName } = body;
+
+    if (
+      !projectName ||
+      typeof projectName !== "string" ||
+      projectName.trim().length === 0
+    ) {
       return NextResponse.json(
         {
           message: "Project Name not provided",
@@ -60,13 +69,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cleanProjectName = projectName.trim();
+
+    // -----------------------------------------
+    // STORAGE CONFIGURATION
+    // -----------------------------------------
+
+    const isProduction =
+      process.env.NODE_ENV === "production";
+
+    const useSupabase =
+      process.env.USE_SUPABASE_STORAGE === "true";
+
+    console.log(
+      "NODE_ENV:",
+      process.env.NODE_ENV
+    );
+
+    console.log(
+      "USE_SUPABASE_STORAGE:",
+      useSupabase
+    );
+
     // -----------------------------------------
     // CREATE DATABASE PROJECT
     // -----------------------------------------
 
     const project = await prisma.project.create({
       data: {
-        name: projectName,
+        name: cleanProjectName,
         ownerId: user.id,
         template: "nextjs",
         language: "typescript",
@@ -79,50 +110,99 @@ export async function POST(req: NextRequest) {
       project.id
     );
 
-    // -----------------------------------------
-    // CREATE LOCAL WORKSPACE
-    // -----------------------------------------
+    // =================================================
+    // DEVELOPMENT
+    // =================================================
 
-    await createProjectWorkspace(
-      user.id,
-      project.id,
-      "nextjs"
-    );
-
-    console.log(
-      "LOCAL WORKSPACE CREATED:",
-      user.id,
-      project.id
-    );
-
-    // -----------------------------------------
-    // UPLOAD TO SUPABASE IN PRODUCTION
-    // -----------------------------------------
-
-    const useSupabase =
-      process.env.USE_SUPABASE_STORAGE === "true";
-
-    if (useSupabase) {
-      const projectPath = path.resolve(
-        process.cwd(),
-        "WORKSPACE",
-        user.id,
-        project.id
+    if (!isProduction) {
+      console.log(
+        "DEVELOPMENT MODE: creating local workspace"
       );
 
+      // -----------------------------------------
+      // CREATE LOCAL WORKSPACE
+      // -----------------------------------------
+
+      const projectPath =
+        await createProjectWorkspace(
+          user.id,
+          project.id,
+          "nextjs"
+        );
+
       console.log(
-        "Uploading project to Supabase:",
+        "LOCAL WORKSPACE CREATED:",
         projectPath
       );
 
+      // -----------------------------------------
+      // UPLOAD LOCAL WORKSPACE TO SUPABASE
+      // -----------------------------------------
+
+      if (useSupabase) {
+        console.log(
+          "UPLOADING LOCAL WORKSPACE TO SUPABASE:"
+        );
+
+        console.log(
+          "PROJECT PATH:",
+          projectPath
+        );
+
+        await uploadProjectToSupabase(
+          projectPath,
+          user.id,
+          project.id
+        );
+
+        console.log(
+          "PROJECT UPLOADED TO SUPABASE"
+        );
+      }
+    }
+
+    // =================================================
+    // PRODUCTION / RENDER
+    // =================================================
+
+    else {
+      console.log(
+        "PRODUCTION MODE: generating project directly"
+      );
+
+      // -----------------------------------------
+      // PRODUCTION REQUIRES SUPABASE
+      // -----------------------------------------
+
+      if (!useSupabase) {
+        throw new Error(
+          "USE_SUPABASE_STORAGE must be true in production"
+        );
+      }
+
+      // -----------------------------------------
+      // GENERATE PROJECT FILES IN MEMORY
+      // -----------------------------------------
+
+      const files =
+        await generateProjectFiles("nextjs");
+
+      console.log(
+        `Generated ${files.length} project files`
+      );
+
+      // -----------------------------------------
+      // UPLOAD FILES DIRECTLY TO SUPABASE
+      // -----------------------------------------
+
       await uploadProjectToSupabase(
-        projectPath,
+        project.id,
         user.id,
-        project.id
+        files
       );
 
       console.log(
-        "PROJECT UPLOADED TO SUPABASE"
+        "PROJECT UPLOADED DIRECTLY TO SUPABASE"
       );
     }
 
@@ -132,11 +212,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
-        message: "Project created successfully",
-        projects: project,
-        storage: useSupabase
+        message:
+          "Project created successfully",
+
+        project,
+
+        storage: isProduction
           ? "supabase"
-          : "local",
+          : useSupabase
+            ? "local + supabase"
+            : "local",
       },
       {
         status: 201,
