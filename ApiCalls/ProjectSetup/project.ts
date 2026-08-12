@@ -26,7 +26,7 @@ export async function CreateProject(pName: string) {
 
 export async function GetProjectFolder(ownerId:string,id:string){
   console.log("working")
-  const res=await AxiosInstance.post(`project/${id}/files`,{ownerId})
+  const res=await AxiosInstance.post(`/project/${id}/files`,{ownerId})
   console.log(res);
   return res.data
 }
@@ -36,7 +36,7 @@ export async function Adduser({user,projectId}:AddUserPayload){
   return res.data
 } 
 
-export async function DeleteProject(projectId:string){
-  const res=await AxiosInstance.delete(`/project/${projectId}`);
+export async function DeleteProject(id:string){
+  const res=await AxiosInstance.delete(`/project/${id}`);
   return res.data
 }

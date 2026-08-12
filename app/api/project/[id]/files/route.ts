@@ -83,13 +83,15 @@ export async function POST(
       { files },
       { status: 200 }
     );
-  } catch (error) {
-    console.error(error);
+  }catch (error) {
+  console.error("FILES API ERROR:", error);
 
-    return NextResponse.json(
-      { message: "Server error" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    {
+      message: error instanceof Error ? error.message : "Server error",
+    },
+    { status: 500 }
+  );
+}
 }
 
