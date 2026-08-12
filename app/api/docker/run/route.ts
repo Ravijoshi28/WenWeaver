@@ -8,6 +8,7 @@ import getPort from "get-port";
 import http from "http";
 import crypto from "crypto";
 import { PassThrough } from "stream";
+export const runtime = "nodejs";
 
 type ProjectFile = {
   name: string;
