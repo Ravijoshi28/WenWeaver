@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
@@ -9,7 +11,7 @@ import http from "http";
 import crypto from "crypto";
 import { PassThrough } from "stream";
 
-export const runtime = "nodejs";
+
 
 type ProjectFile = {
   name: string;
