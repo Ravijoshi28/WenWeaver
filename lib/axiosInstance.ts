@@ -27,7 +27,7 @@ AxiosInstance.interceptors.response.use(
       try {
         // Refresh access token
         await axios.post(
-          "http://localhost:3000/api/auth/refresh",
+          "/api/auth/refresh",
           {},
           {
             withCredentials: true,
@@ -39,7 +39,7 @@ AxiosInstance.interceptors.response.use(
       } catch (refreshError) {
         // Refresh failed -> logout
         await axios.post(
-          "http://localhost:3000/api/auth/logout",
+          "/api/auth/logout",
           {},
           {
             withCredentials: true,
