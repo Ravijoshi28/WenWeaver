@@ -12,6 +12,14 @@ type FileNode = {
   children?: FileNode[];
 };
 
+const IGNORED_DIRECTORIES = new Set([
+  "node_modules",
+  ".next",
+  ".git",
+  "dist",
+  "build",
+]);
+
 async function readDirectory(
   dir: string,
   relativePath = ""
@@ -23,6 +31,14 @@ async function readDirectory(
   const nodes: FileNode[] = [];
 
   for (const entry of entries) {
+    // Skip generated/dependency directories
+    if (
+      entry.isDirectory() &&
+      IGNORED_DIRECTORIES.has(entry.name)
+    ) {
+      continue;
+    }
+
     const fullPath = path.join(dir, entry.name);
     const filePath = path.join(relativePath, entry.name);
 
@@ -33,8 +49,12 @@ async function readDirectory(
         type: "folder",
         children: await readDirectory(fullPath, filePath),
       });
-    } else {
-      const content = await fs.readFile(fullPath, "utf-8");
+
+      continue;
+    }
+
+    try {
+      const content = await fs.readFile(fullPath, "utf8");
 
       nodes.push({
         name: entry.name,
@@ -42,6 +62,13 @@ async function readDirectory(
         type: "file",
         content,
       });
+    } catch (error) {
+      console.error(
+        `Could not read file: ${fullPath}`,
+        error
+      );
+
+      // Skip files that cannot be read as UTF-8
     }
   }
 
@@ -53,8 +80,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Authenticate
+    // -----------------------------------------
+    // AUTHENTICATION
+    // -----------------------------------------
+
     const cookieStore = await cookies();
+
     const token = cookieStore.get("accessToken")?.value;
 
     if (!token) {
@@ -73,28 +104,67 @@ export async function POST(
       );
     }
 
-    // Get project ID
+    // -----------------------------------------
+    // PROJECT ID
+    // -----------------------------------------
+
     const { id } = await params;
 
-    // Get owner ID
-    const { ownerId } = await req.json();
+    if (!id) {
+      return NextResponse.json(
+        { message: "Project ID is required" },
+        { status: 400 }
+      );
+    }
 
-    // IMPORTANT:
-    // This must match the location where your project generator
-    // actually creates the files.
-    const projectPath = path.join(
+    // -----------------------------------------
+    // OWNER ID
+    // -----------------------------------------
+
+    const body = await req.json();
+
+    const { ownerId } = body;
+
+    if (!ownerId) {
+      return NextResponse.json(
+        { message: "ownerId is required" },
+        { status: 400 }
+      );
+    }
+
+    // -----------------------------------------
+    // PROJECT PATH
+    // -----------------------------------------
+
+    const projectPath = path.resolve(
       process.cwd(),
       "WORKSPACE",
       ownerId,
       id
     );
 
-    console.log("Reading project files from:", projectPath);
+    console.log("=================================");
+    console.log("CWD:", process.cwd());
+    console.log("OWNER ID:", ownerId);
+    console.log("PROJECT ID:", id);
+    console.log("PROJECT PATH:", projectPath);
+    console.log("=================================");
 
-    // Check directory exists
+    // -----------------------------------------
+    // CHECK DIRECTORY
+    // -----------------------------------------
+
+    let stat;
+
     try {
-      await fs.access(projectPath);
-    } catch {
+      stat = await fs.stat(projectPath);
+    } catch (error) {
+      console.error(
+        "Project directory does not exist:",
+        projectPath,
+        error
+      );
+
       return NextResponse.json(
         {
           message: "Project directory not found",
@@ -104,11 +174,32 @@ export async function POST(
       );
     }
 
-    // Read files
+    if (!stat.isDirectory()) {
+      return NextResponse.json(
+        {
+          message: "Project path is not a directory",
+          path: projectPath,
+        },
+        { status: 400 }
+      );
+    }
+
+    // -----------------------------------------
+    // READ PROJECT
+    // -----------------------------------------
+
     const files = await readDirectory(projectPath);
+
+    console.log(
+      `Successfully read ${files.length} root entries`
+    );
 
     return NextResponse.json(
       {
+        success: true,
+        projectId: id,
+        ownerId,
+        path: projectPath,
         files,
       },
       { status: 200 }
