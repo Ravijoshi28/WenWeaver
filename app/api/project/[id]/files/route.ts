@@ -71,11 +71,24 @@ export async function POST(
     const { ownerId } = await req.json();
 
     const projectPath = path.join(
-      process.cwd(),
-      "WORKSPACE",
-      ownerId,
-      id
-    );
+  process.cwd(),
+  "WORKSPACE",
+  ownerId,
+  id
+);
+
+console.log("PROJECT PATH:", projectPath);
+console.log("CWD:", process.cwd());
+
+await fs.mkdir(projectPath, { recursive: true });
+
+console.log(
+  "PROJECT DIRECTORY EXISTS:",
+  await fs
+    .access(projectPath)
+    .then(() => true)
+    .catch(() => false)
+);
 
     const files = await readDirectory(projectPath);
 
