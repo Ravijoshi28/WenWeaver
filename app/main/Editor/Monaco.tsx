@@ -1,14 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Editor, BeforeMount, OnMount } from "@monaco-editor/react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import {
+  Editor,
+  BeforeMount,
+  OnMount,
+} from "@monaco-editor/react";
+
 import type * as Monaco from "monaco-editor";
+
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { MonacoBinding } from "y-monaco";
 
 import { useProjectState } from "@/useStates/projectStates";
-import { runDockerContainer } from "@/ApiCalls/docker/docker";
+
 import { useMutation } from "@tanstack/react-query";
 
 export type FileNode = {
@@ -19,7 +31,13 @@ export type FileNode = {
   children?: FileNode[];
 };
 
-function normalizePath(value?: string): string {
+// =====================================================
+// NORMALIZE PATH
+// =====================================================
+
+function normalizePath(
+  value?: string
+): string {
   if (!value) return "";
 
   return value
@@ -28,6 +46,10 @@ function normalizePath(value?: string): string {
     .replace(/\/+/g, "/")
     .replace(/\/$/, "");
 }
+
+// =====================================================
+// GET NODE PATH
+// =====================================================
 
 function getNodePath(
   node: FileNode,
@@ -39,6 +61,10 @@ function getNodePath(
       : node.name
   );
 }
+
+// =====================================================
+// FIND FILE BY PATH
+// =====================================================
 
 function findFileByPath(
   nodes: FileNode[],
@@ -54,7 +80,8 @@ function findFileByPath(
 
     if (
       node.type === "file" &&
-      normalizePath(currentPath) === normalizedTarget
+      normalizePath(currentPath) ===
+        normalizedTarget
     ) {
       return {
         ...node,
@@ -66,37 +93,66 @@ function findFileByPath(
       node.type === "folder" &&
       Array.isArray(node.children)
     ) {
-      const found = findFileByPath(
-        node.children,
-        normalizedTarget,
-        currentPath
-      );
+      const found =
+        findFileByPath(
+          node.children,
+          normalizedTarget,
+          currentPath
+        );
 
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
   }
 
   return null;
 }
 
+// =====================================================
+// LANGUAGE
+// =====================================================
+
 function getLanguageFromFileName(
   filename?: string
 ): string {
-  if (!filename) return "typescriptreact";
+  if (!filename) {
+    return "typescriptreact";
+  }
 
-  const name = filename.toLowerCase();
+  const name =
+    filename.toLowerCase();
 
-  if (name.endsWith(".tsx")) return "typescriptreact";
-  if (name.endsWith(".jsx")) return "javascriptreact";
-  if (name.endsWith(".ts")) return "typescript";
-  if (name.endsWith(".js")) return "javascript";
-  if (name.endsWith(".css")) return "css";
-  if (name.endsWith(".scss")) return "scss";
-  if (name.endsWith(".json")) return "json";
-  if (name.endsWith(".md")) return "markdown";
+  if (name.endsWith(".tsx"))
+    return "typescriptreact";
+
+  if (name.endsWith(".jsx"))
+    return "javascriptreact";
+
+  if (name.endsWith(".ts"))
+    return "typescript";
+
+  if (name.endsWith(".js"))
+    return "javascript";
+
+  if (name.endsWith(".css"))
+    return "css";
+
+  if (name.endsWith(".scss"))
+    return "scss";
+
+  if (name.endsWith(".json"))
+    return "json";
+
+  if (name.endsWith(".md"))
+    return "markdown";
 
   return "plaintext";
 }
+
+// =====================================================
+// UPDATE FILE IN ZUSTAND
+// =====================================================
 
 function updateFileInTree(
   files: FileNode[],
@@ -117,11 +173,15 @@ function updateFileInTree(
   ): FileNode[] {
     return nodes.map((node) => {
       const currentPath =
-        getNodePath(node, parentPath);
+        getNodePath(
+          node,
+          parentPath
+        );
 
       if (
         node.type === "file" &&
-        normalizePath(currentPath) === normalizedTarget
+        normalizePath(currentPath) ===
+          normalizedTarget
       ) {
         updated = true;
 
@@ -139,10 +199,11 @@ function updateFileInTree(
         return {
           ...node,
           path: currentPath,
-          children: updateRecursive(
-            node.children,
-            currentPath
-          ),
+          children:
+            updateRecursive(
+              node.children,
+              currentPath
+            ),
         };
       }
 
@@ -159,25 +220,43 @@ function updateFileInTree(
   };
 }
 
+// =====================================================
+// PREVIEW RESPONSE
+// =====================================================
+
+type PreviewResponse = {
+  success: boolean;
+  projectId: string;
+  previewUrl: string;
+  message?: string;
+};
+
+// =====================================================
+// MAIN EDITOR
+// =====================================================
+
 export function MainEditor() {
   const selectedFile =
     useProjectState(
-      (state) => state.selectedFile
+      (state) =>
+        state.selectedFile
     );
 
   const project =
     useProjectState(
-      (state) => state.project
+      (state) =>
+        state.project
     );
 
   const [previewUrl, setPreviewUrl] =
     useState<string | null>(null);
 
-  /*
-   * =====================================================
-   * EDITOR / YJS REFS
-   * =====================================================
-   */
+  const [isRunning, setIsRunning] =
+    useState(false);
+
+  // ===================================================
+  // EDITOR REFS
+  // ===================================================
 
   const editorRef =
     useRef<
@@ -199,317 +278,53 @@ export function MainEditor() {
   const syncedRef =
     useRef(false);
 
-  /*
-   * IMPORTANT:
-   *
-   * We keep track of the observer that WE created.
-   * This allows us to correctly call ytext.unobserve()
-   * when changing files / destroying the editor.
-   */
   const ytextObserverRef =
     useRef<{
       ytext: Y.Text;
-      // Yjs doesn't export a YTextObserver type from the bundled index in some
-      // setups. Use a generic callback type to avoid the missing export error.
-      observer: (event: any) => void;
+      observer: (
+        event: any
+      ) => void;
     } | null>(null);
 
-  /*
-   * =====================================================
-   * CLEANUP MONACO ↔ YJS BINDING
-   * =====================================================
-   */
+  // ===================================================
+  // CLEANUP BINDING
+  // ===================================================
 
-  const cleanupBinding = useCallback(() => {
-    console.log("🧹 Cleaning up Monaco ↔ YJS binding");
+  const cleanupBinding =
+    useCallback(() => {
+      if (
+        ytextObserverRef.current
+      ) {
+        const {
+          ytext,
+          observer,
+        } =
+          ytextObserverRef.current;
 
-    /*
-     * First remove our own Y.Text observer.
-     */
-    if (ytextObserverRef.current) {
-      const {
-        ytext,
-        observer,
-      } = ytextObserverRef.current;
-
-      console.log(
-        "🧹 Removing Y.Text observer"
-      );
-
-      ytext.unobserve(observer);
-
-      ytextObserverRef.current = null;
-    }
-
-    /*
-     * Then destroy MonacoBinding.
-     */
-    if (bindingRef.current) {
-      console.log(
-        "🧹 Destroying MonacoBinding"
-      );
-
-      bindingRef.current.destroy();
-
-      bindingRef.current = null;
-    }
-
-    currentYTextRef.current = null;
-  }, []);
-
-  /*
-   * =====================================================
-   * CREATE YJS CONNECTION
-   * =====================================================
-   */
-
-  useEffect(() => {
-    const projectId =
-      project?.projectId;
-
-    if (!projectId) return;
-
-    /*
-     * Prevent duplicate connection.
-     */
-    if (
-      ydocRef.current &&
-      providerRef.current
-    ) {
-      return;
-    }
-
-    console.log(
-      "🟢 Creating YJS connection"
-    );
-
-    const ydoc = new Y.Doc();
-
-    const room =
-      `project:${projectId}`;
-
-    console.log(
-      "🏠 Room:",
-      room
-    );
-
-    console.log(
-      "🆔 Client:",
-      ydoc.clientID
-    );
-
-    /*
-     * Both browsers must use the SAME
-     * WebSocket server.
-     */
-    const provider =
-      new WebsocketProvider(
-        "ws://localhost:1234",
-        room,
-        ydoc,
-        {
-          connect: true,
-        }
-      );
-
-    ydocRef.current = ydoc;
-    providerRef.current = provider;
-
-    /*
-     * User awareness.
-     */
-    provider.awareness.setLocalStateField(
-      "user",
-      {
-        id: String(ydoc.clientID),
-        name: `User ${ydoc.clientID}`,
-        color: "#3b82f6",
-      }
-    );
-
-    /*
-     * WebSocket status.
-     */
-    const statusHandler = ({
-      status,
-    }: {
-      status: string;
-    }) => {
-      console.log(
-        "🌐 WEBSOCKET STATUS:",
-        status
-      );
-    };
-
-    provider.on(
-      "status",
-      statusHandler
-    );
-
-    /*
-     * Yjs synchronization.
-     *
-     * IMPORTANT:
-     * We only set syncedRef here.
-     *
-     * The actual editor binding is handled
-     * by handleEditorMount / selectedFile effect.
-     */
-    const syncHandler = (
-      isSynced: boolean
-    ) => {
-      console.log(
-        "🔄 YJS SYNC:",
-        isSynced
-      );
-
-      if (isSynced) {
-        syncedRef.current = true;
-
-        console.log(
-          "✅ YJS DOCUMENT SYNCED"
+        ytext.unobserve(
+          observer
         );
 
-        const filesMap =
-          ydoc.getMap<Y.Text>("files");
-
-        console.log(
-          "📁 YJS FILES:",
-          Array.from(filesMap.keys())
-        );
-
-        /*
-         * If Monaco is already mounted,
-         * bind the currently selected file.
-         */
-        const editor =
-          editorRef.current;
-
-        const path =
-          useProjectState
-            .getState()
-            .selectedFile?.path;
-
-        if (
-          editor &&
-          path
-        ) {
-          bindFileToYjs(
-            editor,
-            path
-          );
-        }
+        ytextObserverRef.current =
+          null;
       }
-    };
 
-    provider.on(
-      "sync",
-      syncHandler
-    );
+      if (
+        bindingRef.current
+      ) {
+        bindingRef.current.destroy();
 
-    /*
-     * Awareness.
-     */
-    const awarenessHandler = () => {
-      const states =
-        provider.awareness.getStates();
+        bindingRef.current =
+          null;
+      }
 
-      console.log(
-        "👥 COLLABORATORS:",
-        states.size
-      );
+      currentYTextRef.current =
+        null;
+    }, []);
 
-      console.log(
-        "👥 USERS:",
-        Array.from(states.entries())
-      );
-    };
-
-    provider.awareness.on(
-      "change",
-      awarenessHandler
-    );
-
-    /*
-     * DEBUG ALL YJS UPDATES.
-     */
-    const updateHandler = (
-      update: Uint8Array,
-      origin: unknown
-    ) => {
-      console.log(
-        "📡 YJS UPDATE RECEIVED",
-        {
-          bytes: update.length,
-          origin,
-          clientID: ydoc.clientID,
-        }
-      );
-    };
-
-    ydoc.on(
-      "update",
-      updateHandler
-    );
-
-    /*
-     * Cleanup.
-     */
-    return () => {
-      console.log(
-        "🔴 Destroying YJS:",
-        room
-      );
-
-      /*
-       * Remove our Monaco/Y.Text binding.
-       */
-      cleanupBinding();
-
-      /*
-       * Remove provider listeners.
-       */
-      provider.off(
-        "status",
-        statusHandler
-      );
-
-      provider.off(
-        "sync",
-        syncHandler
-      );
-
-      provider.awareness.off(
-        "change",
-        awarenessHandler
-      );
-
-      ydoc.off(
-        "update",
-        updateHandler
-      );
-
-      /*
-       * Destroy provider/doc.
-       */
-      provider.destroy();
-      ydoc.destroy();
-
-      providerRef.current = null;
-      ydocRef.current = null;
-
-      syncedRef.current = false;
-    };
-  }, [
-    project?.projectId,
-    cleanupBinding,
-  ]);
-
-  /*
-   * =====================================================
-   * UPDATE ZUSTAND
-   * =====================================================
-   */
+  // ===================================================
+  // UPDATE ZUSTAND
+  // ===================================================
 
   const updateFileInStore =
     useCallback(
@@ -532,7 +347,7 @@ export function MainEditor() {
 
         if (!result.updated) {
           console.warn(
-            "⚠️ File not found:",
+            "File not found:",
             filePath
           );
 
@@ -558,11 +373,15 @@ export function MainEditor() {
                   ...(selected ?? {}),
 
                   path:
-                    normalizePath(filePath),
+                    normalizePath(
+                      filePath
+                    ),
 
                   name:
                     selected?.name ??
-                    normalizePath(filePath)
+                    normalizePath(
+                      filePath
+                    )
                       .split("/")
                       .pop() ??
                     "",
@@ -579,11 +398,166 @@ export function MainEditor() {
       []
     );
 
-  /*
-   * =====================================================
-   * BIND MONACO TO YJS
-   * =====================================================
-   */
+  // ===================================================
+  // YJS CONNECTION
+  // ===================================================
+
+  useEffect(() => {
+    const projectId =
+      project?.projectId;
+
+    if (!projectId) {
+      return;
+    }
+
+    if (
+      ydocRef.current &&
+      providerRef.current
+    ) {
+      return;
+    }
+
+    const ydoc =
+      new Y.Doc();
+
+    const room =
+      `project:${projectId}`;
+
+    const provider =
+      new WebsocketProvider(
+        "https://webweaver-m0is.onrender.com",
+        room,
+        ydoc,
+        {
+          connect: true,
+        }
+      );
+
+    ydocRef.current =
+      ydoc;
+
+    providerRef.current =
+      provider;
+
+    provider.awareness.setLocalStateField(
+      "user",
+      {
+        id: String(
+          ydoc.clientID
+        ),
+
+        name:
+          `User ${ydoc.clientID}`,
+
+        color:
+          "#3b82f6",
+      }
+    );
+
+    const statusHandler = ({
+      status,
+    }: {
+      status: string;
+    }) => {
+      console.log(
+        "YJS STATUS:",
+        status
+      );
+    };
+
+    provider.on(
+      "status",
+      statusHandler
+    );
+
+    const syncHandler = (
+      isSynced: boolean
+    ) => {
+      if (!isSynced) {
+        return;
+      }
+
+      syncedRef.current =
+        true;
+
+      const editor =
+        editorRef.current;
+
+      const path =
+        useProjectState
+          .getState()
+          .selectedFile?.path;
+
+      if (
+        editor &&
+        path
+      ) {
+        bindFileToYjs(
+          editor,
+          path
+        );
+      }
+    };
+
+    provider.on(
+      "sync",
+      syncHandler
+    );
+
+    const awarenessHandler =
+      () => {
+        console.log(
+          "Collaborators:",
+          provider.awareness
+            .getStates()
+            .size
+        );
+      };
+
+    provider.awareness.on(
+      "change",
+      awarenessHandler
+    );
+
+    return () => {
+      cleanupBinding();
+
+      provider.off(
+        "status",
+        statusHandler
+      );
+
+      provider.off(
+        "sync",
+        syncHandler
+      );
+
+      provider.awareness.off(
+        "change",
+        awarenessHandler
+      );
+
+      provider.destroy();
+
+      ydoc.destroy();
+
+      providerRef.current =
+        null;
+
+      ydocRef.current =
+        null;
+
+      syncedRef.current =
+        false;
+    };
+  }, [
+    project?.projectId,
+    cleanupBinding,
+  ]);
+
+  // ===================================================
+  // BIND FILE TO YJS
+  // ===================================================
 
   const bindFileToYjs =
     useCallback(
@@ -597,23 +571,16 @@ export function MainEditor() {
         const provider =
           providerRef.current;
 
-        if (!ydoc || !provider) {
-          console.warn(
-            "⚠️ YJS not ready"
-          );
-
+        if (
+          !ydoc ||
+          !provider
+        ) {
           return;
         }
 
-        /*
-         * Do not create/seed Y.Text before
-         * the document has synchronized.
-         */
-        if (!syncedRef.current) {
-          console.log(
-            "⏳ Waiting for YJS sync..."
-          );
-
+        if (
+          !syncedRef.current
+        ) {
           return;
         }
 
@@ -621,48 +588,29 @@ export function MainEditor() {
           editor.getModel();
 
         if (!model) {
-          console.warn(
-            "⚠️ Monaco model missing"
-          );
-
           return;
         }
 
         const normalizedPath =
-          normalizePath(filePath);
+          normalizePath(
+            filePath
+          );
 
-        console.log(
-          "🔗 Binding:",
-          normalizedPath
-        );
-
-        /*
-         * IMPORTANT:
-         *
-         * Always clean up the previous
-         * observer + binding first.
-         */
         cleanupBinding();
 
         const filesMap =
-          ydoc.getMap<Y.Text>("files");
+          ydoc.getMap<Y.Text>(
+            "files"
+          );
 
         let ytext =
           filesMap.get(
             normalizedPath
           );
 
-        /*
-         * Only create Y.Text if it
-         * doesn't already exist.
-         */
         if (!ytext) {
-          console.log(
-            "🆕 Creating Y.Text:",
-            normalizedPath
-          );
-
-          ytext = new Y.Text();
+          ytext =
+            new Y.Text();
 
           const state =
             useProjectState.getState();
@@ -674,12 +622,12 @@ export function MainEditor() {
             );
 
           const initialContent =
-            existingFile?.content ?? "";
+            existingFile?.content ??
+            "";
 
-          /*
-           * Seed only once.
-           */
-          if (initialContent) {
+          if (
+            initialContent
+          ) {
             ytext.insert(
               0,
               initialContent
@@ -690,78 +638,31 @@ export function MainEditor() {
             normalizedPath,
             ytext
           );
-        } else {
-          console.log(
-            "♻️ Existing Y.Text:",
-            normalizedPath
-          );
         }
 
         currentYTextRef.current =
           ytext;
 
-        /*
-         * =================================================
-         * Y.TEXT OBSERVER
-         * =================================================
-         *
-         * This observer belongs to us.
-         *
-         * We store it in ytextObserverRef so that
-         * cleanupBinding() can call ytext.unobserve().
-         */
-
-        const ytextObserver = (
-          event: Y.YTextEvent | any,
-          transaction: Y.Transaction
+        const observer = (
+          _event: any,
+          _transaction: Y.Transaction
         ) => {
-          console.log(
-            "✏️ YText changed:",
-            normalizedPath
-          );
-
-          console.log(
-            "📄 Content:",
-            ytext!.toString()
-          );
-
-          console.log(
-            "🌍 Local transaction:",
-            transaction.local
-          );
-
-          /*
-           * Sync collaborative content
-           * into Zustand.
-           */
           updateFileInStore(
             normalizedPath,
             ytext!.toString()
           );
         };
 
-        // yjs typings expect observer: (event: any) => void
-        // our observer receives (event, transaction). Cast to any to satisfy TS.
         ytext.observe(
-          ytextObserver as any
+          observer as any
         );
 
-        /*
-         * IMPORTANT:
-         *
-         * Keep a reference to the exact
-         * observer we attached.
-         */
-        ytextObserverRef.current = {
-          ytext,
-          observer: ytextObserver as any,
-        };
-
-        /*
-         * =================================================
-         * MONACO ↔ YJS
-         * =================================================
-         */
+        ytextObserverRef.current =
+          {
+            ytext,
+            observer:
+              observer as any,
+          };
 
         const binding =
           new MonacoBinding(
@@ -773,11 +674,6 @@ export function MainEditor() {
 
         bindingRef.current =
           binding;
-
-        console.log(
-          "✅ Monaco ↔ YJS BOUND:",
-          normalizedPath
-        );
       },
       [
         cleanupBinding,
@@ -785,21 +681,15 @@ export function MainEditor() {
       ]
     );
 
-  /*
-   * =====================================================
-   * MONACO MOUNT
-   * =====================================================
-   */
+  // ===================================================
+  // EDITOR MOUNT
+  // ===================================================
 
   const handleEditorMount:
     OnMount = (
       editor,
       monaco
     ) => {
-      console.log(
-        "🟢 Monaco mounted"
-      );
-
       editorRef.current =
         editor;
 
@@ -808,10 +698,6 @@ export function MainEditor() {
           .getState()
           .selectedFile?.path;
 
-      /*
-       * If YJS is already synced,
-       * bind immediately.
-       */
       if (
         filePath &&
         syncedRef.current
@@ -822,21 +708,15 @@ export function MainEditor() {
         );
       }
 
-      /*
-       * We NO LONGER add another
-       * provider "sync" listener here.
-       *
-       * The main YJS connection effect
-       * already handles sync.
-       */
+      // ===============================================
+      // CTRL + S
+      // ===============================================
 
-      /*
-       * Ctrl + S.
-       */
       editor.addAction({
         id: "save-and-run",
 
-        label: "Save and Run",
+        label:
+          "Save and Run Preview",
 
         keybindings: [
           monaco.KeyMod.CtrlCmd |
@@ -849,11 +729,9 @@ export function MainEditor() {
       });
     };
 
-  /*
-   * =====================================================
-   * SWITCH FILE
-   * =====================================================
-   */
+  // ===================================================
+  // SWITCH FILE
+  // ===================================================
 
   useEffect(() => {
     const editor =
@@ -869,11 +747,9 @@ export function MainEditor() {
       return;
     }
 
-    if (!syncedRef.current) {
-      console.log(
-        "⏳ Cannot bind yet - YJS not synced"
-      );
-
+    if (
+      !syncedRef.current
+    ) {
       return;
     }
 
@@ -886,63 +762,102 @@ export function MainEditor() {
     bindFileToYjs,
   ]);
 
-  /*
-   * =====================================================
-   * RUN
-   * =====================================================
-   */
+  // ===================================================
+  // START VERCEL SANDBOX PREVIEW
+  // ===================================================
 
   const runMutation =
     useMutation({
-      mutationFn: ({
-        ownerId,
-        id,
-        files,
-      }: {
-        ownerId: string;
-        id: string;
-        files: FileNode[];
-      }) =>
-        runDockerContainer(
-          ownerId,
-          id,
-          files
-        ),
+      mutationFn:
+        async ({
+          projectId,
+          files,
+        }: {
+          projectId: string;
+          files: FileNode[];
+        }) => {
+          const response =
+            await fetch(
+              "/api/preview",
+              {
+                method: "POST",
 
-      onSuccess: (data) => {
-        if (data?.previewUrl) {
-          setPreviewUrl(
-            data.previewUrl
-          );
-        }
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+
+                body:
+                  JSON.stringify({
+                    projectId,
+                    files,
+                  }),
+              }
+            );
+
+          const data =
+            (await response.json()) as PreviewResponse;
+
+          if (
+            !response.ok ||
+            !data.success
+          ) {
+            throw new Error(
+              data.message ??
+                "Preview failed"
+            );
+          }
+
+          return data;
+        },
+
+      onMutate: () => {
+        setIsRunning(true);
       },
 
-      onError: (error: Error) => {
+      onSuccess: (data) => {
+        console.log(
+          "🟢 Preview ready:",
+          data.previewUrl
+        );
+
+        setPreviewUrl(
+          data.previewUrl
+        );
+      },
+
+      onError: (error) => {
         console.error(
-          "Docker Error:",
+          "❌ Preview error:",
           error
         );
+
+        alert(
+          error instanceof Error
+            ? error.message
+            : "Preview failed"
+        );
+      },
+
+      onSettled: () => {
+        setIsRunning(false);
       },
     });
 
-  /*
-   * =====================================================
-   * RUN PROJECT
-   * =====================================================
-   */
+  // ===================================================
+  // RUN PROJECT
+  // ===================================================
 
   const handleRun =
     useCallback(() => {
-      const ownerId =
-        project?.ownerId;
-
       const projectId =
         project?.projectId;
 
-      if (
-        !ownerId ||
-        !projectId
-      ) {
+      if (!projectId) {
+        console.warn(
+          "Project ID missing"
+        );
+
         return;
       }
 
@@ -952,25 +867,44 @@ export function MainEditor() {
       const files =
         state.files as FileNode[];
 
+      if (
+        !files ||
+        files.length === 0
+      ) {
+        console.warn(
+          "No project files"
+        );
+
+        return;
+      }
+
+      console.log(
+        "🚀 Starting preview:",
+        projectId
+      );
+
+      console.log(
+        "📁 Sending files:",
+        files.length
+      );
+
       runMutation.mutate({
-        ownerId,
-        id: projectId,
+        projectId,
         files,
       });
     }, [
-      project?.ownerId,
       project?.projectId,
       runMutation,
     ]);
 
-  /*
-   * =====================================================
-   * MONACO CONFIG
-   * =====================================================
-   */
+  // ===================================================
+  // MONACO CONFIG
+  // ===================================================
 
   const handleBeforeMount:
-    BeforeMount = (monaco) => {
+    BeforeMount = (
+      monaco
+    ) => {
       monaco.languages.typescript
         .typescriptDefaults
         .setCompilerOptions({
@@ -983,7 +917,9 @@ export function MainEditor() {
               .ScriptTarget.Latest,
 
           allowJs: true,
-          allowNonTsExtensions: true,
+
+          allowNonTsExtensions:
+            true,
         });
 
       monaco.languages.typescript
@@ -994,15 +930,15 @@ export function MainEditor() {
               .JsxEmit.ReactJSX,
 
           allowJs: true,
-          allowNonTsExtensions: true,
+
+          allowNonTsExtensions:
+            true,
         });
     };
 
-  /*
-   * =====================================================
-   * RENDER
-   * =====================================================
-   */
+  // ===================================================
+  // RENDER
+  // ===================================================
 
   const defaultContent =
 `export function Welcome() {
@@ -1013,7 +949,8 @@ export function MainEditor() {
     normalizePath(
       selectedFile?.path ??
         selectedFile?.name
-    ) || "app/page.tsx";
+    ) ||
+    "app/page.tsx";
 
   const currentLanguage =
     getLanguageFromFileName(
@@ -1022,6 +959,10 @@ export function MainEditor() {
 
   return (
     <div className="flex h-full w-full">
+
+      {/* =================================================
+          EDITOR
+      ================================================= */}
 
       <div className="relative h-full w-1/2 min-w-0">
 
@@ -1033,7 +974,9 @@ export function MainEditor() {
             selectedFile?.content ??
             defaultContent
           }
-          language={currentLanguage}
+          language={
+            currentLanguage
+          }
           theme="vs-dark"
           beforeMount={
             handleBeforeMount
@@ -1042,7 +985,8 @@ export function MainEditor() {
             handleEditorMount
           }
           options={{
-            automaticLayout: true,
+            automaticLayout:
+              true,
 
             minimap: {
               enabled: true,
@@ -1058,17 +1002,21 @@ export function MainEditor() {
           }}
         />
 
+        {/* RUN BUTTON */}
+
         <div className="absolute right-4 top-4 z-30">
 
           <button
             type="button"
-            onClick={handleRun}
-            disabled={
-              runMutation.isPending
+            onClick={
+              handleRun
             }
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
+            disabled={
+              isRunning
+            }
+            className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {runMutation.isPending
+            {isRunning
               ? "Running..."
               : "Run"}
           </button>
@@ -1077,13 +1025,17 @@ export function MainEditor() {
 
       </div>
 
+      {/* =================================================
+          PREVIEW
+      ================================================= */}
+
       <div className="flex h-full w-1/2 bg-slate-900">
 
         {previewUrl ? (
           <iframe
             src={previewUrl}
             className="h-full w-full border-none bg-white"
-            title="Preview"
+            title="Project Preview"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-gray-400">
