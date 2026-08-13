@@ -10,8 +10,11 @@ import getPort from "get-port";
 import http from "http";
 import crypto from "crypto";
 import { PassThrough } from "stream";
+import { supabaseAdmin } from "@/lib/supabase";
 
-
+// =========================================================
+// TYPES
+// =========================================================
 
 type ProjectFile = {
   name: string;
@@ -20,20 +23,27 @@ type ProjectFile = {
   children?: ProjectFile[];
 };
 
-type SyncOptions = {
-  existingContainer?: boolean;
-};
-
-type PreviewResult = {
-  container: Docker.Container;
-  hostPort: string;
-  reused: boolean;
-};
-
 type SyncResult = {
   configChanged: boolean;
   dependenciesChanged: boolean;
 };
+
+// =========================================================
+// SUPABASE
+// =========================================================
+
+const SUPABASE_BUCKET =
+  process.env.SUPABASE_BUCKET ?? "project-files";
+
+if (!supabaseAdmin) {
+  console.warn(
+    "⚠️ Supabase admin client is not configured"
+  );
+}
+
+// =========================================================
+// DOCKER
+// =========================================================
 
 const isWindows = process.platform === "win32";
 
@@ -46,6 +56,19 @@ const docker = new Docker(
         socketPath: "/var/run/docker.sock",
       }
 );
+
+// =========================================================
+// CONSTANTS
+// =========================================================
+
+const CONTAINER_APP_DIR = "/app";
+const NEXT_PORT = 3000;
+
+const KEEP_ALIVE_COMMAND = [
+  "sh",
+  "-c",
+  "while true; do sleep 3600; done",
+];
 
 const NEXT_CONFIG_FILES = new Set([
   "next.config.js",
@@ -61,66 +84,119 @@ const PACKAGE_FILES = new Set([
   "pnpm-lock.yaml",
 ]);
 
-/* =========================================================
-   CONSTANTS
-========================================================= */
+const IGNORED_DIRECTORIES = new Set([
+  "node_modules",
+  ".next",
+  ".git",
+  "dist",
+  "build",
+]);
 
-const CONTAINER_APP_DIR = "/app";
-const NEXT_PORT = 3000;
+// =========================================================
+// LOCKS
+//
+// IMPORTANT:
+//
+// The old code only locked Docker operations.
+//
+// Supabase sync happened BEFORE that lock.
+//
+// That allowed two requests for the same project
+// to upload files simultaneously.
+//
+// We now lock the WHOLE project operation.
+// =========================================================
 
-/*
- * The container itself stays alive using sleep.
- *
- * Next.js is then started separately using docker exec.
- *
- * This is intentional.
- */
-const CONTAINER_KEEPALIVE_COMMAND = [
-  "sh",
-  "-c",
-  "while true; do sleep 3600; done",
-];
+const projectLocks =
+  new Map<string, Promise<void>>();
 
-/* =========================================================
-   HELPERS
-========================================================= */
+// =========================================================
+// SLEEP
+// =========================================================
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
-/* =========================================================
-   NORMALIZE PROJECT PATH
-========================================================= */
+// =========================================================
+// PROJECT LOCK
+// =========================================================
 
-function normalizeProjectPath(relativePath: string): string {
+async function withProjectLock<T>(
+  projectId: string,
+  callback: () => Promise<T>
+): Promise<T> {
+  const previous =
+    projectLocks.get(projectId) ??
+    Promise.resolve();
+
+  let release!: () => void;
+
+  const current =
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+  const lock =
+    previous.then(() => current);
+
+  projectLocks.set(projectId, lock);
+
+  try {
+    await previous;
+
+    return await callback();
+  } finally {
+    release();
+
+    if (
+      projectLocks.get(projectId) === lock
+    ) {
+      projectLocks.delete(projectId);
+    }
+  }
+}
+
+// =========================================================
+// NORMALIZE PATH
+// =========================================================
+
+function normalizeProjectPath(
+  relativePath: string
+): string {
   return relativePath
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/^(\.\.\/)+/, "");
 }
 
-/* =========================================================
-   SAFE PATH
-========================================================= */
+// =========================================================
+// SAFE PATH
+// =========================================================
 
 function getSafeWorkspacePath(
   workspace: string,
   relativePath: string
 ): string | null {
-  const normalized = normalizeProjectPath(relativePath);
+  const normalized =
+    normalizeProjectPath(relativePath);
 
-  const workspaceResolved = path.resolve(workspace);
+  const workspaceResolved =
+    path.resolve(workspace);
 
-  const resolved = path.resolve(
-    workspaceResolved,
-    normalized
-  );
+  const resolved =
+    path.resolve(
+      workspaceResolved,
+      normalized
+    );
 
-  const relative = path.relative(
-    workspaceResolved,
-    resolved
-  );
+  const relative =
+    path.relative(
+      workspaceResolved,
+      resolved
+    );
 
   if (
     relative.startsWith("..") ||
@@ -132,9 +208,9 @@ function getSafeWorkspacePath(
   return resolved;
 }
 
-/* =========================================================
-   FLATTEN FILE TREE
-========================================================= */
+// =========================================================
+// FLATTEN FILE TREE
+// =========================================================
 
 function flattenFiles(
   files: ProjectFile[],
@@ -144,11 +220,16 @@ function flattenFiles(
 
   for (const file of files) {
     const currentPath = parentPath
-      ? path.posix.join(parentPath, file.name)
+      ? path.posix.join(
+          parentPath,
+          file.name
+        )
       : file.name;
 
     if (file.type === "folder") {
-      if (Array.isArray(file.children)) {
+      if (
+        Array.isArray(file.children)
+      ) {
         result.push(
           ...flattenFiles(
             file.children,
@@ -160,18 +241,647 @@ function flattenFiles(
       continue;
     }
 
+    const normalizedPath =
+      normalizeProjectPath(
+        currentPath
+      );
+
+    if (!normalizedPath) {
+      continue;
+    }
+
     result.push({
       ...file,
-      name: currentPath,
+      name: normalizedPath,
     });
   }
 
   return result;
 }
 
-/* =========================================================
-   REMOVE STALE HOST FILES
-========================================================= */
+// =========================================================
+// SUPABASE PATH
+// =========================================================
+
+function getSupabaseFilePath(
+  ownerId: string,
+  projectId: string,
+  filePath: string
+): string {
+  const normalized =
+    normalizeProjectPath(filePath);
+
+  return [
+    ownerId,
+    projectId,
+    normalized,
+  ]
+    .filter(Boolean)
+    .join("/");
+}
+
+// =========================================================
+// ENSURE BUCKET
+// =========================================================
+
+async function ensureSupabaseBucket(): Promise<void> {
+  if (!supabaseAdmin) {
+    throw new Error(
+      "Supabase is not configured"
+    );
+  }
+
+  const {
+    data: buckets,
+    error: listError,
+  } =
+    await supabaseAdmin.storage.listBuckets();
+
+  if (listError) {
+    throw new Error(
+      `Unable to access Supabase Storage: ${listError.message}`
+    );
+  }
+
+  const exists =
+    buckets?.some(
+      (bucket) =>
+        bucket.name === SUPABASE_BUCKET
+    );
+
+  if (exists) {
+    return;
+  }
+
+  console.log(
+    `☁️ Creating Supabase bucket "${SUPABASE_BUCKET}"`
+  );
+
+  const {
+    error,
+  } =
+    await supabaseAdmin.storage.createBucket(
+      SUPABASE_BUCKET,
+      {
+        public: false,
+      }
+    );
+
+  if (error) {
+    if (
+      error.message
+        .toLowerCase()
+        .includes("already exists")
+    ) {
+      return;
+    }
+
+    throw new Error(
+      `Failed to create Supabase bucket "${SUPABASE_BUCKET}": ${error.message}`
+    );
+  }
+
+  console.log(
+    `✅ Created Supabase bucket "${SUPABASE_BUCKET}"`
+  );
+}
+
+// =========================================================
+// LIST SUPABASE FILES
+// =========================================================
+
+async function listSupabaseFiles(
+  folder: string
+): Promise<string[]> {
+  if (!supabaseAdmin) {
+    throw new Error(
+      "Supabase is not configured"
+    );
+  }
+
+  const result: string[] = [];
+
+  async function walk(
+    currentFolder: string
+  ): Promise<void> {
+    const {
+      data,
+      error,
+    } =
+      await supabaseAdmin.storage
+        .from(SUPABASE_BUCKET)
+        .list(
+          currentFolder,
+          {
+            limit: 1000,
+            offset: 0,
+            sortBy: {
+              column: "name",
+              order: "asc",
+            },
+          }
+        );
+
+    if (error) {
+      throw error;
+    }
+
+    for (const item of data ?? []) {
+      const itemPath =
+        currentFolder
+          ? `${currentFolder}/${item.name}`
+          : item.name;
+
+      const isFile =
+        item.metadata !== null &&
+        item.metadata !== undefined;
+
+      if (isFile) {
+        result.push(itemPath);
+      } else {
+        await walk(itemPath);
+      }
+    }
+  }
+
+  await walk(folder);
+
+  return result;
+}
+
+// =========================================================
+// VERIFY SUPABASE FILE
+//
+// IMPORTANT FIX:
+//
+// Do NOT use:
+//
+// storage.download(path)
+//
+// immediately after upsert for verification.
+//
+// Supabase Storage/CDN may temporarily return
+// an older representation.
+//
+// Instead:
+// 1. Create a fresh signed URL.
+// 2. Add cache-busting query parameter.
+// 3. Fetch with no-store.
+// 4. Retry with exponential backoff.
+// =========================================================
+
+async function verifySupabaseFile(
+  storagePath: string,
+  expectedContent: string,
+  attempts = 8
+): Promise<void> {
+  if (!supabaseAdmin) {
+    throw new Error(
+      "Supabase is not configured"
+    );
+  }
+
+  const expectedBuffer =
+    Buffer.from(
+      expectedContent,
+      "utf8"
+    );
+
+  for (
+    let attempt = 1;
+    attempt <= attempts;
+    attempt++
+  ) {
+    console.log(
+      `🔍 VERIFYING ${storagePath} (${attempt}/${attempts})`
+    );
+
+    try {
+      // -----------------------------------------
+      // CREATE A FRESH SIGNED URL
+      // -----------------------------------------
+
+      const {
+        data: signedData,
+        error: signedError,
+      } =
+        await supabaseAdmin.storage
+          .from(SUPABASE_BUCKET)
+          .createSignedUrl(
+            storagePath,
+            60
+          );
+
+      if (signedError) {
+        console.warn(
+          `⚠️ Could not create signed URL (${attempt}/${attempts}):`,
+          signedError.message
+        );
+      } else if (
+        signedData?.signedUrl
+      ) {
+        // -----------------------------------------
+        // CACHE BUSTER
+        // -----------------------------------------
+
+        const cacheBuster =
+          `verify=${Date.now()}-${crypto.randomUUID()}`;
+
+        const separator =
+          signedData.signedUrl.includes("?")
+            ? "&"
+            : "?";
+
+        const freshUrl =
+          `${signedData.signedUrl}${separator}${cacheBuster}`;
+
+        // -----------------------------------------
+        // FRESH HTTP REQUEST
+        // -----------------------------------------
+
+        const response =
+          await fetch(
+            freshUrl,
+            {
+              method: "GET",
+              cache: "no-store",
+              headers: {
+                "Cache-Control":
+                  "no-cache, no-store, max-age=0",
+                Pragma: "no-cache",
+              },
+            }
+          );
+
+        if (!response.ok) {
+          console.warn(
+            `⚠️ Verification HTTP ${response.status} (${attempt}/${attempts})`
+          );
+        } else {
+          const actualBuffer =
+            Buffer.from(
+              await response.arrayBuffer()
+            );
+
+          if (
+            actualBuffer.equals(
+              expectedBuffer
+            )
+          ) {
+            console.log(
+              `✅ VERIFIED: ${storagePath}`
+            );
+
+            return;
+          }
+
+          console.warn(
+            `⚠️ Content mismatch (${attempt}/${attempts})`,
+            {
+              expectedLength:
+                expectedBuffer.length,
+              actualLength:
+                actualBuffer.length,
+            }
+          );
+        }
+      }
+    } catch (error) {
+      console.warn(
+        `⚠️ Verification error (${attempt}/${attempts}):`,
+        error instanceof Error
+          ? error.message
+          : error
+      );
+    }
+
+    // -----------------------------------------
+    // EXPONENTIAL BACKOFF
+    //
+    // 500
+    // 1000
+    // 2000
+    // 3000
+    // ...
+    // -----------------------------------------
+
+    if (attempt < attempts) {
+      const delay =
+        Math.min(
+          500 * 2 ** (attempt - 1),
+          4000
+        );
+
+      console.log(
+        `⏳ Waiting ${delay}ms before verification retry...`
+      );
+
+      await sleep(delay);
+    }
+  }
+
+  throw new Error(
+    `Supabase verification failed after ${attempts} attempts: ${storagePath}`
+  );
+}
+
+// =========================================================
+// SYNC FILES TO SUPABASE
+// =========================================================
+
+async function syncFilesToSupabase(
+  ownerId: string,
+  projectId: string,
+  files: ProjectFile[]
+): Promise<void> {
+  if (!supabaseAdmin) {
+    throw new Error(
+      "Supabase is not configured"
+    );
+  }
+
+  await ensureSupabaseBucket();
+
+  const flattened =
+    flattenFiles(files);
+
+  console.log(
+    "======================================"
+  );
+  console.log(
+    "☁️ SUPABASE SYNC"
+  );
+  console.log(
+    `Owner: ${ownerId}`
+  );
+  console.log(
+    `Project: ${projectId}`
+  );
+  console.log(
+    `Files received: ${flattened.length}`
+  );
+  console.log(
+    "======================================"
+  );
+
+  const expectedPaths =
+    new Set<string>();
+
+  // -----------------------------------------
+  // UPLOAD EVERY FILE
+  // -----------------------------------------
+
+  for (const file of flattened) {
+    const filePath =
+      normalizeProjectPath(
+        file.name
+      );
+
+    if (!filePath) {
+      continue;
+    }
+
+    const storagePath =
+      getSupabaseFilePath(
+        ownerId,
+        projectId,
+        filePath
+      );
+
+    expectedPaths.add(
+      storagePath
+    );
+
+    const content =
+      file.content ?? "";
+
+    const buffer =
+      Buffer.from(
+        content,
+        "utf8"
+      );
+
+    console.log("");
+    console.log(
+      "☁️ SYNCING:"
+    );
+    console.log(
+      "Storage path:",
+      storagePath
+    );
+    console.log(
+      "Content length:",
+      buffer.length
+    );
+
+    // -----------------------------------------
+    // UPLOAD
+    // -----------------------------------------
+
+    const {
+      error: uploadError,
+    } =
+      await supabaseAdmin.storage
+        .from(SUPABASE_BUCKET)
+        .upload(
+          storagePath,
+          buffer,
+          {
+            contentType:
+              getContentType(
+                filePath
+              ),
+
+            upsert: true,
+
+            // Do not let the CDN cache this object.
+            cacheControl: "0",
+
+            // Explicitly indicate binary-safe upload.
+            duplex: "half",
+          } as any
+        );
+
+    if (uploadError) {
+      throw new Error(
+        `Failed to upload ${storagePath}: ${uploadError.message}`
+      );
+    }
+
+    console.log(
+      `✅ Supabase object uploaded: ${storagePath}`
+    );
+
+    // -----------------------------------------
+    // VERIFY
+    // -----------------------------------------
+
+    await verifySupabaseFile(
+      storagePath,
+      content
+    );
+  }
+
+  // -----------------------------------------
+  // FIND EXISTING FILES
+  // -----------------------------------------
+
+  const projectFolder =
+    `${ownerId}/${projectId}`;
+
+  let existingPaths: string[] = [];
+
+  try {
+    existingPaths =
+      await listSupabaseFiles(
+        projectFolder
+      );
+  } catch (error) {
+    console.error(
+      "⚠️ Could not list existing Supabase files:",
+      error
+    );
+  }
+
+  // -----------------------------------------
+  // DELETE STALE FILES
+  // -----------------------------------------
+
+  const stalePaths =
+    existingPaths.filter(
+      (storagePath) =>
+        !expectedPaths.has(
+          storagePath
+        )
+    );
+
+  if (
+    stalePaths.length > 0
+  ) {
+    console.log(
+      `🗑 Removing ${stalePaths.length} stale Supabase files`
+    );
+
+    const {
+      error: removeError,
+    } =
+      await supabaseAdmin.storage
+        .from(SUPABASE_BUCKET)
+        .remove(
+          stalePaths
+        );
+
+    if (removeError) {
+      throw new Error(
+        `Failed to remove stale Supabase files: ${removeError.message}`
+      );
+    }
+
+    for (
+      const stale of stalePaths
+    ) {
+      console.log(
+        `🗑 Removed stale Supabase file: ${stale}`
+      );
+    }
+  }
+
+  console.log("");
+  console.log(
+    "======================================"
+  );
+  console.log(
+    "✅ SUPABASE SYNC COMPLETE"
+  );
+  console.log(
+    "======================================"
+  );
+}
+
+// =========================================================
+// CONTENT TYPE
+// =========================================================
+
+function getContentType(
+  filePath: string
+): string {
+  const extension =
+    path
+      .extname(filePath)
+      .toLowerCase();
+
+  switch (extension) {
+    case ".js":
+    case ".jsx":
+      return "text/javascript";
+
+    case ".ts":
+    case ".tsx":
+      return "text/typescript";
+
+    case ".json":
+      return "application/json";
+
+    case ".css":
+      return "text/css";
+
+    case ".scss":
+    case ".sass":
+      return "text/css";
+
+    case ".html":
+    case ".htm":
+      return "text/html";
+
+    case ".svg":
+      return "image/svg+xml";
+
+    case ".png":
+      return "image/png";
+
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+
+    case ".gif":
+      return "image/gif";
+
+    case ".webp":
+      return "image/webp";
+
+    case ".ico":
+      return "image/x-icon";
+
+    case ".avif":
+      return "image/avif";
+
+    case ".md":
+      return "text/markdown";
+
+    case ".txt":
+      return "text/plain";
+
+    case ".xml":
+      return "application/xml";
+
+    case ".csv":
+      return "text/csv";
+
+    case ".yaml":
+    case ".yml":
+      return "application/yaml";
+
+    case ".env":
+      return "text/plain";
+
+    default:
+      return "application/octet-stream";
+  }
+}
+
+// =========================================================
+// REMOVE STALE HOST FILES
+// =========================================================
 
 async function removeStaleFiles(
   directory: string,
@@ -181,44 +891,58 @@ async function removeStaleFiles(
   let entries;
 
   try {
-    entries = await fs.readdir(
-      directory,
-      {
-        withFileTypes: true,
-      }
-    );
+    entries =
+      await fs.readdir(
+        directory,
+        {
+          withFileTypes: true,
+        }
+      );
   } catch {
     return;
   }
 
-  for (const entry of entries) {
-    const absolutePath = path.join(
-      directory,
-      entry.name
-    );
+  for (
+    const entry of entries
+  ) {
+    const absolutePath =
+      path.join(
+        directory,
+        entry.name
+      );
 
-    const relativePath = path.relative(
-      workspace,
-      absolutePath
-    );
+    const relativePath =
+      path.relative(
+        workspace,
+        absolutePath
+      );
 
-    /*
-     * Docker-managed directories.
-     */
+    const normalized =
+      relativePath.replace(
+        /\\/g,
+        "/"
+      );
+
+    const firstSegment =
+      normalized.split("/")[0];
+
     if (
-      relativePath === "node_modules" ||
-      relativePath.startsWith(
-        `node_modules${path.sep}`
+      IGNORED_DIRECTORIES.has(
+        firstSegment
       ) ||
-      relativePath === ".next" ||
-      relativePath.startsWith(
-        `.next${path.sep}`
+      normalized.startsWith(
+        "node_modules/"
+      ) ||
+      normalized.startsWith(
+        ".next/"
       )
     ) {
       continue;
     }
 
-    if (entry.isDirectory()) {
+    if (
+      entry.isDirectory()
+    ) {
       await removeStaleFiles(
         absolutePath,
         workspace,
@@ -231,7 +955,9 @@ async function removeStaleFiles(
             absolutePath
           );
 
-        if (remaining.length === 0) {
+        if (
+          remaining.length === 0
+        ) {
           await fs.rm(
             absolutePath,
             {
@@ -240,16 +966,18 @@ async function removeStaleFiles(
             }
           );
         }
-      } catch {
-        // Ignore cleanup errors.
-      }
+      } catch {}
 
       continue;
     }
 
-    if (!expectedFiles.has(relativePath)) {
+    if (
+      !expectedFiles.has(
+        normalized
+      )
+    ) {
       console.log(
-        `🗑 Removing stale host file: ${relativePath}`
+        `🗑 Removing stale host file: ${normalized}`
       );
 
       await fs.rm(
@@ -262,62 +990,67 @@ async function removeStaleFiles(
   }
 }
 
-/* =========================================================
-   SYNC WORKSPACE TO HOST
-========================================================= */
+// =========================================================
+// SYNC HOST WORKSPACE
+// =========================================================
 
 async function syncWorkspace(
   workspace: string,
   files: ProjectFile[]
 ): Promise<void> {
-  const flattened = flattenFiles(files);
+  const flattened =
+    flattenFiles(files);
 
-  console.log("======================================");
+  const expectedFiles =
+    new Set<string>();
+
   console.log(
     `📂 Syncing ${flattened.length} files to host`
   );
-  console.log(`📁 Workspace: ${workspace}`);
 
-  const expectedFiles = new Set<string>();
-
-  for (const file of flattened) {
-    const filePath =
+  for (
+    const file of flattened
+  ) {
+    const safePath =
       getSafeWorkspacePath(
         workspace,
         file.name
       );
 
-    if (!filePath) {
+    if (!safePath) {
       throw new Error(
         `Unsafe file path: ${file.name}`
       );
     }
 
     const relativePath =
-      path.relative(
-        workspace,
-        filePath
-      );
+      path
+        .relative(
+          workspace,
+          safePath
+        )
+        .replace(
+          /\\/g,
+          "/"
+        );
 
     expectedFiles.add(
       relativePath
     );
 
     await fs.mkdir(
-      path.dirname(filePath),
+      path.dirname(
+        safePath
+      ),
       {
         recursive: true,
       }
     );
 
     await fs.writeFile(
-      filePath,
+      safePath,
       file.content ?? "",
       "utf8"
-    );
-
-    console.log(
-      `✅ Host sync: ${file.name}`
     );
   }
 
@@ -332,21 +1065,20 @@ async function syncWorkspace(
   );
 }
 
-/* =========================================================
-   BUILD IMAGE
-========================================================= */
+// =========================================================
+// BUILD IMAGE
+// =========================================================
 
 async function buildProjectImage(
   imageTag: string,
   projectDir: string
 ): Promise<void> {
   console.log(
-    `🐳 Building Docker image '${imageTag}'...`
+    `🐳 Building image: ${imageTag}`
   );
 
-  const tarStream = tar.pack(
-    projectDir
-  );
+  const tarStream =
+    tar.pack(projectDir);
 
   const stream =
     await docker.buildImage(
@@ -362,22 +1094,22 @@ async function buildProjectImage(
       docker.modem.followProgress(
         stream,
 
-        (err, res) => {
+        (err, result) => {
           if (err) {
             reject(err);
             return;
           }
 
           const buildError =
-            res?.find(
-              (step: any) =>
-                step.error
+            result?.find(
+              (item: any) =>
+                item.error
             );
 
           if (buildError) {
             reject(
               new Error(
-                `Docker Build Failed: ${buildError.error}`
+                buildError.error
               )
             );
 
@@ -390,13 +1122,13 @@ async function buildProjectImage(
         (event) => {
           if (event.stream) {
             console.log(
-              `[Docker Build] ${event.stream.trim()}`
+              `[Docker] ${event.stream.trim()}`
             );
           }
 
           if (event.error) {
             console.error(
-              `[Docker Build Error] ${event.error}`
+              `[Docker Error] ${event.error}`
             );
           }
         }
@@ -405,20 +1137,17 @@ async function buildProjectImage(
   );
 
   console.log(
-    `✅ Successfully built image '${imageTag}'`
+    `✅ Image built: ${imageTag}`
   );
 }
 
-/* =========================================================
-   GET EXISTING CONTAINER
-========================================================= */
+// =========================================================
+// GET EXISTING CONTAINER
+// =========================================================
 
 async function getExistingContainer(
   containerName: string
-): Promise<{
-  container: Docker.Container;
-  info: Docker.ContainerInspectInfo;
-} | null> {
+) {
   const container =
     docker.getContainer(
       containerName
@@ -437,9 +1166,9 @@ async function getExistingContainer(
   }
 }
 
-/* =========================================================
-   REMOVE CONTAINER
-========================================================= */
+// =========================================================
+// REMOVE CONTAINER
+// =========================================================
 
 async function removeContainer(
   containerName: string
@@ -453,21 +1182,14 @@ async function removeContainer(
     const info =
       await container.inspect();
 
-    console.log(
-      `🗑 Removing old container: ${containerName}`
-    );
-
-    if (info.State?.Running) {
+    if (
+      info.State?.Running
+    ) {
       try {
         await container.stop({
           t: 3,
         });
-      } catch (error) {
-        console.warn(
-          "Container stop failed:",
-          error
-        );
-      }
+      } catch {}
     }
 
     await container.remove({
@@ -475,180 +1197,87 @@ async function removeContainer(
     });
 
     console.log(
-      "✅ Old container removed"
+      `🗑 Removed container: ${containerName}`
     );
-  } catch {
-    // Container doesn't exist.
-  }
+  } catch {}
 }
 
-/* =========================================================
-   CONTAINER LOCKS
-========================================================= */
+// =========================================================
+// EXEC
+// =========================================================
 
-const containerLocks =
-  new Map<string, Promise<void>>();
-
-async function withContainerLock<T>(
-  projectId: string,
-  callback: () => Promise<T>
-): Promise<T> {
-  const previous =
-    containerLocks.get(
-      projectId
-    ) ?? Promise.resolve();
-
-  let release!: () => void;
-
-  const current =
-    new Promise<void>(
-      (resolve) => {
-        release = resolve;
-      }
-    );
-
-  const lockPromise =
-    previous.then(
-      () => current
-    );
-
-  containerLocks.set(
-    projectId,
-    lockPromise
-  );
-
-  try {
-    await previous;
-
-    return await callback();
-  } finally {
-    release();
-
-    if (
-      containerLocks.get(
-        projectId
-      ) === lockPromise
-    ) {
-      containerLocks.delete(
-        projectId
-      );
-    }
-  }
-}
-
-/* =========================================================
-   GET CONTAINER HOST PORT
-========================================================= */
-
-function getContainerHostPort(
-  info: Docker.ContainerInspectInfo
-): string | null {
-  const bindings =
-    info.NetworkSettings?.Ports?.[
-      "3000/tcp"
-    ];
-
-  if (
-    !bindings ||
-    bindings.length === 0
-  ) {
-    return null;
-  }
-
-  return (
-    bindings[0]?.HostPort ??
-    null
-  );
-}
-
-/* =========================================================
-   DEMUX EXEC OUTPUT
-========================================================= */
-
-async function runExecCollectOutput(
+async function execCommand(
   container: Docker.Container,
   command: string[],
-  options: {
-    detached?: boolean;
-  } = {}
+  detached = false
 ): Promise<{
   exitCode: number;
-  stdout: string;
-  stderr: string;
   output: string;
 }> {
   const exec =
     await container.exec({
       Cmd: command,
-      AttachStdout:
-        !options.detached,
-      AttachStderr:
-        !options.detached,
+      AttachStdout: !detached,
+      AttachStderr: !detached,
     });
 
-  const rawStream =
+  const stream =
     await exec.start({
-      hijack: !options.detached,
+      hijack: !detached,
       stdin: false,
-      Detach:
-        options.detached,
+      Detach: detached,
     } as any);
 
-  if (options.detached) {
+  if (detached) {
     return {
       exitCode: 0,
-      stdout: "",
-      stderr: "",
       output: "",
     };
   }
 
-  const stdoutChunks: Buffer[] = [];
-  const stderrChunks: Buffer[] = [];
+  let output = "";
 
-  const stdoutStream =
+  const stdout =
     new PassThrough();
 
-  const stderrStream =
+  const stderr =
     new PassThrough();
 
-  stdoutStream.on(
+  stdout.on(
     "data",
-    (chunk: Buffer) => {
-      stdoutChunks.push(
-        Buffer.from(chunk)
-      );
+    (chunk) => {
+      output +=
+        chunk.toString();
     }
   );
 
-  stderrStream.on(
+  stderr.on(
     "data",
-    (chunk: Buffer) => {
-      stderrChunks.push(
-        Buffer.from(chunk)
-      );
+    (chunk) => {
+      output +=
+        chunk.toString();
     }
   );
 
   docker.modem.demuxStream(
-    rawStream,
-    stdoutStream,
-    stderrStream
+    stream,
+    stdout,
+    stderr
   );
 
   await new Promise<void>(
     (resolve, reject) => {
-      rawStream.on(
+      stream.on(
         "end",
-        () => resolve()
+        resolve
       );
 
-      rawStream.on(
+      stream.on(
         "close",
-        () => resolve()
+        resolve
       );
 
-      rawStream.on(
+      stream.on(
         "error",
         reject
       );
@@ -658,73 +1287,56 @@ async function runExecCollectOutput(
   const inspect =
     await exec.inspect();
 
-  const stdout =
-    Buffer.concat(
-      stdoutChunks
-    ).toString("utf8");
-
-  const stderr =
-    Buffer.concat(
-      stderrChunks
-    ).toString("utf8");
-
   return {
     exitCode:
       inspect.ExitCode ?? 1,
-    stdout,
-    stderr,
-    output:
-      stdout + stderr,
+    output,
   };
 }
 
-/* =========================================================
-   EXEC INSIDE RUNNING CONTAINER
-========================================================= */
+// =========================================================
+// ENSURE CONTAINER RUNNING
+// =========================================================
 
-async function execInContainer(
-  container: Docker.Container,
-  command: string[]
-): Promise<{
-  exitCode: number;
-  output: string;
-}> {
+async function ensureContainerRunning(
+  container: Docker.Container
+): Promise<void> {
   const info =
     await container.inspect();
 
-  if (!info.State?.Running) {
+  if (
+    info.State?.Running
+  ) {
+    return;
+  }
+
+  console.log(
+    "▶️ Starting container..."
+  );
+
+  await container.start();
+
+  await sleep(500);
+
+  const updated =
+    await container.inspect();
+
+  if (
+    !updated.State?.Running
+  ) {
     throw new Error(
-      `Cannot exec in stopped container ${container.id}`
+      "Container failed to start"
     );
   }
 
   console.log(
-    `🐳 EXEC: ${command.join(" ")}`
+    "✅ Container running"
   );
-
-  const result =
-    await runExecCollectOutput(
-      container,
-      command
-    );
-
-  if (result.output.trim()) {
-    console.log(
-      `[Container] ${result.output.trim()}`
-    );
-  }
-
-  return {
-    exitCode:
-      result.exitCode,
-    output:
-      result.output,
-  };
 }
 
-/* =========================================================
-   GET CONTAINER FILE
-========================================================= */
+// =========================================================
+// GET CONTAINER FILE
+// =========================================================
 
 async function getContainerFile(
   container: Docker.Container,
@@ -732,7 +1344,7 @@ async function getContainerFile(
 ): Promise<string | null> {
   try {
     const result =
-      await execInContainer(
+      await execCommand(
         container,
         [
           "cat",
@@ -740,7 +1352,9 @@ async function getContainerFile(
         ]
       );
 
-    if (result.exitCode !== 0) {
+    if (
+      result.exitCode !== 0
+    ) {
       return null;
     }
 
@@ -750,16 +1364,16 @@ async function getContainerFile(
   }
 }
 
-/* =========================================================
-   CHECK NODE MODULES
-========================================================= */
+// =========================================================
+// NODE MODULES
+// =========================================================
 
 async function hasNodeModules(
   container: Docker.Container
 ): Promise<boolean> {
   try {
     const result =
-      await execInContainer(
+      await execCommand(
         container,
         [
           "sh",
@@ -771,25 +1385,27 @@ async function hasNodeModules(
         ]
       );
 
-    return result.exitCode === 0;
+    return (
+      result.exitCode === 0
+    );
   } catch {
     return false;
   }
 }
 
-/* =========================================================
-   PACKAGE MANAGER
-========================================================= */
+// =========================================================
+// PACKAGE MANAGER
+// =========================================================
 
 function getPackageManager(
   files: ProjectFile[]
-): "npm" | "yarn" | "pnpm" {
-  const flattened =
-    flattenFiles(files);
-
+):
+  | "npm"
+  | "yarn"
+  | "pnpm" {
   const names =
     new Set(
-      flattened.map(
+      flattenFiles(files).map(
         (file) =>
           normalizeProjectPath(
             file.name
@@ -806,7 +1422,9 @@ function getPackageManager(
   }
 
   if (
-    names.has("yarn.lock")
+    names.has(
+      "yarn.lock"
+    )
   ) {
     return "yarn";
   }
@@ -814,26 +1432,21 @@ function getPackageManager(
   return "npm";
 }
 
-/* =========================================================
-   INSTALL DEPENDENCIES
-========================================================= */
+// =========================================================
+// INSTALL DEPENDENCIES
+// =========================================================
 
 async function installDependencies(
   container: Docker.Container,
   files: ProjectFile[]
 ): Promise<void> {
-  const packageManager =
+  const manager =
     getPackageManager(files);
-
-  console.log(
-    `📦 Package manager: ${packageManager}`
-  );
 
   let command: string[];
 
   if (
-    packageManager ===
-    "pnpm"
+    manager === "pnpm"
   ) {
     command = [
       "sh",
@@ -841,8 +1454,7 @@ async function installDependencies(
       "corepack enable && pnpm install",
     ];
   } else if (
-    packageManager ===
-    "yarn"
+    manager === "yarn"
   ) {
     command = [
       "sh",
@@ -857,11 +1469,11 @@ async function installDependencies(
   }
 
   console.log(
-    "📦 Installing dependencies INSIDE container..."
+    `📦 Installing dependencies using ${manager}`
   );
 
   const result =
-    await execInContainer(
+    await execCommand(
       container,
       command
     );
@@ -879,11 +1491,11 @@ async function installDependencies(
   );
 }
 
-/* =========================================================
-   FIND CHANGED SPECIAL FILES
-========================================================= */
+// =========================================================
+// FIND CHANGES
+// =========================================================
 
-async function findChangedSpecialFiles(
+async function findChanges(
   container: Docker.Container,
   files: ProjectFile[]
 ): Promise<{
@@ -894,8 +1506,8 @@ async function findChangedSpecialFiles(
   const flattened =
     flattenFiles(files);
 
-  const filesToCopy: ProjectFile[] =
-    [];
+  const filesToCopy:
+    ProjectFile[] = [];
 
   let configChanged =
     false;
@@ -903,29 +1515,27 @@ async function findChangedSpecialFiles(
   let dependenciesChanged =
     false;
 
-  for (const file of flattened) {
-    const normalizedName =
+  for (
+    const file of flattened
+  ) {
+    const name =
       normalizeProjectPath(
         file.name
       );
 
-    const isNextConfig =
+    const isConfig =
       NEXT_CONFIG_FILES.has(
-        normalizedName
+        name
       );
 
-    const isPackageFile =
+    const isPackage =
       PACKAGE_FILES.has(
-        normalizedName
+        name
       );
 
-    /*
-     * Normal source files are
-     * always copied.
-     */
     if (
-      !isNextConfig &&
-      !isPackageFile
+      !isConfig &&
+      !isPackage
     ) {
       filesToCopy.push(
         file
@@ -934,13 +1544,10 @@ async function findChangedSpecialFiles(
       continue;
     }
 
-    const containerPath =
-      `${CONTAINER_APP_DIR}/${normalizedName}`;
-
     const existing =
       await getContainerFile(
         container,
-        containerPath
+        `${CONTAINER_APP_DIR}/${name}`
       );
 
     const incoming =
@@ -949,29 +1556,19 @@ async function findChangedSpecialFiles(
     if (
       existing === incoming
     ) {
-      console.log(
-        `⏭️ Unchanged: ${normalizedName}`
-      );
-
       continue;
     }
-
-    console.log(
-      `🔄 Changed: ${normalizedName}`
-    );
 
     filesToCopy.push(
       file
     );
 
-    if (isNextConfig) {
-      configChanged =
-        true;
+    if (isConfig) {
+      configChanged = true;
     }
 
-    if (isPackageFile) {
-      dependenciesChanged =
-        true;
+    if (isPackage) {
+      dependenciesChanged = true;
     }
   }
 
@@ -982,9 +1579,9 @@ async function findChangedSpecialFiles(
   };
 }
 
-/* =========================================================
-   COPY FILES INTO CONTAINER
-========================================================= */
+// =========================================================
+// COPY FILES INTO CONTAINER
+// =========================================================
 
 async function copyFilesToContainer(
   container: Docker.Container,
@@ -997,7 +1594,7 @@ async function copyFilesToContainer(
     flattened.length === 0
   ) {
     console.log(
-      "⏭️ No files need to be copied."
+      "⏭️ No files to copy"
     );
 
     return;
@@ -1019,27 +1616,9 @@ async function copyFilesToContainer(
   );
 
   try {
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "🐳 COPYING FILES INTO CONTAINER"
-    );
-
-    console.log(
-      `📦 Container: ${container.id}`
-    );
-
-    console.log(
-      `📄 Files: ${flattened.length}`
-    );
-
-    console.log(
-      "======================================"
-    );
-
-    for (const file of flattened) {
+    for (
+      const file of flattened
+    ) {
       const safePath =
         getSafeWorkspacePath(
           tempDir,
@@ -1080,7 +1659,7 @@ async function copyFilesToContainer(
     );
 
     console.log(
-      "✅ Files copied directly into /app"
+      `✅ Copied ${flattened.length} files into container`
     );
   } finally {
     await fs.rm(
@@ -1093,23 +1672,18 @@ async function copyFilesToContainer(
   }
 }
 
-/* =========================================================
-   SYNC FILES TO CONTAINER
-========================================================= */
+// =========================================================
+// SYNC CONTAINER
+// =========================================================
 
 async function syncFilesToContainer(
   container: Docker.Container,
   files: ProjectFile[],
-  options: SyncOptions = {}
+  existing: boolean
 ): Promise<SyncResult> {
-  const containerInfo =
-    await container.inspect();
-
-  if (!containerInfo.State?.Running) {
-    throw new Error(
-      `Container ${container.id} must be running before syncing files.`
-    );
-  }
+  await ensureContainerRunning(
+    container
+  );
 
   let filesToCopy =
     flattenFiles(files);
@@ -1120,11 +1694,9 @@ async function syncFilesToContainer(
   let dependenciesChanged =
     false;
 
-  if (
-    options.existingContainer
-  ) {
+  if (existing) {
     const result =
-      await findChangedSpecialFiles(
+      await findChanges(
         container,
         files
       );
@@ -1164,18 +1736,12 @@ async function syncFilesToContainer(
     filesToCopy
   );
 
-  const nodeModulesExists =
+  const modulesExist =
     await hasNodeModules(
       container
     );
 
-  if (
-    !nodeModulesExists
-  ) {
-    console.log(
-      "⚠️ node_modules is empty."
-    );
-
+  if (!modulesExist) {
     await installDependencies(
       container,
       files
@@ -1183,17 +1749,9 @@ async function syncFilesToContainer(
   } else if (
     dependenciesChanged
   ) {
-    console.log(
-      "📦 Package files changed."
-    );
-
     await installDependencies(
       container,
       files
-    );
-  } else {
-    console.log(
-      "✅ Existing node_modules is valid."
     );
   }
 
@@ -1203,9 +1761,247 @@ async function syncFilesToContainer(
   };
 }
 
-/* =========================================================
-   CREATE CONTAINER
-========================================================= */
+// =========================================================
+// CHECK NEXT
+// =========================================================
+
+async function isNextRunning(
+  container: Docker.Container
+): Promise<boolean> {
+  try {
+    const result =
+      await execCommand(
+        container,
+        [
+          "sh",
+          "-c",
+          `
+            if command -v wget >/dev/null 2>&1; then
+              wget -q --spider http://127.0.0.1:3000 && exit 0
+            fi
+
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsS http://127.0.0.1:3000 >/dev/null && exit 0
+            fi
+
+            if command -v busybox >/dev/null 2>&1; then
+              busybox wget -q -O /dev/null http://127.0.0.1:3000 && exit 0
+            fi
+
+            exit 1
+          `,
+        ]
+      );
+
+    return (
+      result.exitCode === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+// =========================================================
+// START NEXT
+// =========================================================
+
+async function startNextServer(
+  container: Docker.Container
+): Promise<void> {
+  await ensureContainerRunning(
+    container
+  );
+
+  if (
+    await isNextRunning(
+      container
+    )
+  ) {
+    console.log(
+      "✅ Next.js already running"
+    );
+
+    return;
+  }
+
+  console.log(
+    "🚀 Starting Next.js..."
+  );
+
+  await execCommand(
+    container,
+    [
+      "sh",
+      "-c",
+      "rm -f /tmp/next.log",
+    ]
+  );
+
+  await execCommand(
+    container,
+    [
+      "sh",
+      "-c",
+      `
+        cd /app &&
+        nohup npm run dev -- -H 0.0.0.0 -p 3000 \
+        >/tmp/next.log 2>&1 &
+      `,
+    ],
+    true
+  );
+
+  await sleep(2000);
+
+  if (
+    !(await isNextRunning(
+      container
+    ))
+  ) {
+    const logs =
+      await execCommand(
+        container,
+        [
+          "sh",
+          "-c",
+          "cat /tmp/next.log 2>/dev/null || true",
+        ]
+      );
+
+    throw new Error(
+      `Next.js failed to start:\n${logs.output}`
+    );
+  }
+
+  const internalReady =
+    await waitForContainerServer(
+      container,
+      3000
+    );
+
+  if (!internalReady) {
+    const logs =
+      await execCommand(
+        container,
+        [
+          "sh",
+          "-c",
+          "cat /tmp/next.log 2>/dev/null || true",
+        ]
+      );
+
+    throw new Error(
+      `Next.js process is running but port 3000 is not responding.\n\nNext logs:\n${logs.output}`
+    );
+  }
+
+  console.log(
+    "✅ Next.js started and responding"
+  );
+}
+
+// =========================================================
+// WAIT INSIDE CONTAINER
+// =========================================================
+
+async function waitForContainerServer(
+  container: Docker.Container,
+  port: number,
+  retries = 60
+): Promise<boolean> {
+  for (
+    let i = 0;
+    i < retries;
+    i++
+  ) {
+    const result =
+      await execCommand(
+        container,
+        [
+          "sh",
+          "-c",
+          `
+            if command -v wget >/dev/null 2>&1; then
+              wget -q -O /dev/null http://127.0.0.1:${port}
+            elif command -v curl >/dev/null 2>&1; then
+              curl -fsS http://127.0.0.1:${port} >/dev/null
+            else
+              node -e "
+                const http = require('http');
+                const req = http.get(
+                  'http://127.0.0.1:${port}',
+                  res => {
+                    res.resume();
+                    process.exit(0);
+                  }
+                );
+                req.on('error', () => process.exit(1));
+                req.setTimeout(1500, () => {
+                  req.destroy();
+                  process.exit(1);
+                });
+              "
+            fi
+          `,
+        ]
+      );
+
+    if (
+      result.exitCode === 0
+    ) {
+      return true;
+    }
+
+    await sleep(500);
+  }
+
+  return false;
+}
+
+// =========================================================
+// STOP NEXT
+// =========================================================
+
+async function stopNextServer(
+  container: Docker.Container
+): Promise<void> {
+  try {
+    await execCommand(
+      container,
+      [
+        "sh",
+        "-c",
+        `
+          pkill -f "next dev" 2>/dev/null || true
+          pkill -f "next-server" 2>/dev/null || true
+          pkill -f "next start" 2>/dev/null || true
+        `,
+      ]
+    );
+  } catch {}
+
+  await sleep(500);
+}
+
+// =========================================================
+// RESTART NEXT
+// =========================================================
+
+async function restartNextServer(
+  container: Docker.Container
+): Promise<void> {
+  await stopNextServer(
+    container
+  );
+
+  await startNextServer(
+    container
+  );
+}
+
+// =========================================================
+// CREATE CONTAINER
+// =========================================================
 
 async function createPreviewContainer(
   imageTag: string,
@@ -1220,27 +2016,11 @@ async function createPreviewContainer(
       await getPort()
     );
 
-  const nodeModulesVol =
+  const nodeModulesVolume =
     `preview-nodemodules-${projectId}`;
 
-  const nextCacheVol =
+  const nextCacheVolume =
     `preview-nextcache-${projectId}`;
-
-  console.log(
-    `🚀 Creating container '${containerName}'`
-  );
-
-  console.log(
-    `🌐 Host port: ${hostPort}`
-  );
-
-  console.log(
-    `📦 node_modules volume: ${nodeModulesVol}`
-  );
-
-  console.log(
-    `📦 .next volume: ${nextCacheVol}`
-  );
 
   const container =
     await docker.createContainer({
@@ -1251,17 +2031,8 @@ async function createPreviewContainer(
       WorkingDir:
         CONTAINER_APP_DIR,
 
-      /*
-       * IMPORTANT:
-       *
-       * Do NOT rely on the Dockerfile CMD.
-       *
-       * We keep the container alive,
-       * then explicitly launch Next.js
-       * after files/dependencies exist.
-       */
       Cmd:
-        CONTAINER_KEEPALIVE_COMMAND,
+        KEEP_ALIVE_COMMAND,
 
       Env: [
         "HOST=0.0.0.0",
@@ -1274,15 +2045,10 @@ async function createPreviewContainer(
         "NEXT_TELEMETRY_DISABLED=1",
       ],
 
-      Volumes: {
-        "/app/node_modules": {},
-        "/app/.next": {},
-      },
-
       HostConfig: {
         Binds: [
-          `${nodeModulesVol}:/app/node_modules`,
-          `${nextCacheVol}:/app/.next`,
+          `${nodeModulesVolume}:/app/node_modules`,
+          `${nextCacheVolume}:/app/.next`,
         ],
 
         PortBindings: {
@@ -1301,7 +2067,7 @@ async function createPreviewContainer(
     });
 
   console.log(
-    `✅ Container created: ${container.id}`
+    `✅ Created container ${container.id}`
   );
 
   return {
@@ -1310,223 +2076,47 @@ async function createPreviewContainer(
   };
 }
 
-/* =========================================================
-   START CONTAINER
-========================================================= */
-
-async function ensureContainerRunning(
-  container: Docker.Container
-): Promise<void> {
-  const info =
-    await container.inspect();
-
-  if (info.State?.Running) {
-    return;
-  }
-
-  console.log(
-    `▶️ Starting container ${container.id}...`
-  );
-
-  await container.start();
-
-  await sleep(500);
-
-  const refreshed =
-    await container.inspect();
-
-  if (
-    !refreshed.State?.Running
-  ) {
-    throw new Error(
-      `Container ${container.id} failed to stay running.`
-    );
-  }
-
-  console.log(
-    "✅ Container is running"
-  );
-}
-
-/* =========================================================
-   CHECK NEXT PROCESS
-========================================================= */
-
-async function isNextRunning(
-  container: Docker.Container
-): Promise<boolean> {
-  try {
-    const result =
-      await execInContainer(
-        container,
-        [
-          "sh",
-          "-c",
-          `
-            ps aux 2>/dev/null |
-            grep -E "[n]ext|[n]ode.*next" |
-            grep -v grep
-          `,
-        ]
-      );
-
-    return (
-      result.exitCode === 0 &&
-      result.output.trim().length > 0
-    );
-  } catch {
-    return false;
-  }
-}
-
-/* =========================================================
-   START NEXT.JS
-========================================================= */
-
-async function startNextServer(
-  container: Docker.Container
-): Promise<void> {
-  const alreadyRunning =
-    await isNextRunning(
-      container
-    );
-
-  if (alreadyRunning) {
-    console.log(
-      "✅ Next.js is already running"
-    );
-
-    return;
-  }
-
-  console.log(
-    "🚀 Starting Next.js inside container..."
-  );
-
-  const command = [
-    "sh",
-    "-c",
-    `
-      cd /app &&
-      npm run dev -- -H 0.0.0.0 -p ${NEXT_PORT}
-    `,
-  ];
-
-  await runExecCollectOutput(
-    container,
-    command,
-    {
-      detached: true,
-    }
-  );
-
-  console.log(
-    "✅ Next.js process started"
-  );
-}
-
-/* =========================================================
-   STOP NEXT.JS
-========================================================= */
-
-async function stopNextServer(
-  container: Docker.Container
-): Promise<void> {
-  try {
-    console.log(
-      "🛑 Stopping Next.js..."
-    );
-
-    await execInContainer(
-      container,
-      [
-        "sh",
-        "-c",
-        `
-          pkill -f "next dev" 2>/dev/null || true
-          pkill -f "node.*next" 2>/dev/null || true
-        `,
-      ]
-    );
-  } catch (error) {
-    console.warn(
-      "Could not stop Next.js:",
-      error
-    );
-  }
-
-  await sleep(500);
-}
-
-/* =========================================================
-   RESTART NEXT.JS
-========================================================= */
-
-async function restartNextServer(
-  container: Docker.Container
-): Promise<void> {
-  await stopNextServer(
-    container
-  );
-
-  await startNextServer(
-    container
-  );
-}
-
-/* =========================================================
-   WAIT FOR NEXT.JS
-========================================================= */
+// =========================================================
+// WAIT HOST SERVER
+// =========================================================
 
 async function waitForServer(
   hostPort: string,
-  maxRetries = 60
+  retries = 60
 ): Promise<boolean> {
-  console.log(
-    `⏳ Waiting for http://127.0.0.1:${hostPort}...`
-  );
-
   for (
     let i = 0;
-    i < maxRetries;
+    i < retries;
     i++
   ) {
     const ready =
       await new Promise<boolean>(
         (resolve) => {
-          const req =
+          const request =
             http.get(
               `http://127.0.0.1:${hostPort}`,
-              (res) => {
-                const statusCode =
-                  res.statusCode ?? 0;
+              (response) => {
+                response.resume();
 
-                res.resume();
-
-                /*
-                 * Any HTTP response means
-                 * the server is alive.
-                 *
-                 * This includes 404/500.
-                 */
                 resolve(
-                  statusCode >= 200 &&
-                  statusCode < 600
+                  (response.statusCode ??
+                    0) >= 200 &&
+                    (response.statusCode ??
+                      0) < 600
                 );
               }
             );
 
-          req.on(
+          request.on(
             "error",
-            () => {
-              resolve(false);
-            }
+            () =>
+              resolve(false)
           );
 
-          req.setTimeout(
+          request.setTimeout(
             1500,
             () => {
-              req.destroy();
+              request.destroy();
               resolve(false);
             }
           );
@@ -1534,19 +2124,7 @@ async function waitForServer(
       );
 
     if (ready) {
-      console.log(
-        `✅ Next.js responding on port ${hostPort}`
-      );
-
       return true;
-    }
-
-    if (
-      i % 5 === 0
-    ) {
-      console.log(
-        `⏳ Still waiting... ${i + 1}/${maxRetries}`
-      );
     }
 
     await sleep(500);
@@ -1555,119 +2133,16 @@ async function waitForServer(
   return false;
 }
 
-/* =========================================================
-   DOCKER LOGS
-========================================================= */
+// =========================================================
+// CREATE PREVIEW
+// =========================================================
 
-async function printContainerLogs(
-  containerName: string
-): Promise<void> {
-  try {
-    const container =
-      docker.getContainer(
-        containerName
-      );
-
-    const logs =
-      await container.logs({
-        stdout: true,
-        stderr: true,
-        tail: 200,
-      });
-
-    console.error(
-      "========== DOCKER LOGS =========="
-    );
-
-    console.error(
-      logs.toString()
-    );
-
-    console.error(
-      "================================="
-    );
-  } catch (error) {
-    console.error(
-      "Could not read Docker logs:",
-      error
-    );
-  }
-}
-
-/* =========================================================
-   UPDATE EXISTING CONTAINER
-========================================================= */
-
-async function updateExistingContainer(
-  container: Docker.Container,
-  files: ProjectFile[]
-): Promise<SyncResult> {
-  console.log(
-    "======================================"
-  );
-
-  console.log(
-    "♻️ UPDATING EXISTING CONTAINER"
-  );
-
-  console.log(
-    `🐳 Container: ${container.id}`
-  );
-
-  console.log(
-    "======================================"
-  );
-
-  await ensureContainerRunning(
-    container
-  );
-
-  const result =
-    await syncFilesToContainer(
-      container,
-      files,
-      {
-        existingContainer:
-          true,
-      }
-    );
-
-  if (
-    result.configChanged
-  ) {
-    console.log(
-      "⚙️ next.config changed."
-    );
-  }
-
-  if (
-    result.dependenciesChanged
-  ) {
-    console.log(
-      "📦 Dependencies changed."
-    );
-  }
-
-  console.log(
-    "✅ Existing container updated"
-  );
-
-  return result;
-}
-
-/* =========================================================
-   CREATE + START PREVIEW
-========================================================= */
-
-async function createAndStartPreviewContainer(
+async function createPreview(
   imageTag: string,
   containerName: string,
   projectId: string,
   files: ProjectFile[]
-): Promise<{
-  container: Docker.Container;
-  hostPort: string;
-}> {
+) {
   const {
     container,
     hostPort,
@@ -1679,70 +2154,37 @@ async function createAndStartPreviewContainer(
     );
 
   try {
-    /*
-     * IMPORTANT:
-     *
-     * createContainer() gives us a STOPPED
-     * container.
-     *
-     * Therefore START IT FIRST.
-     */
     await ensureContainerRunning(
       container
     );
 
-    /*
-     * Now docker exec() is legal.
-     */
     await syncFilesToContainer(
       container,
       files,
-      {
-        existingContainer:
-          false,
-      }
+      false
     );
 
-    /*
-     * Now dependencies and source
-     * files are available.
-     */
     await startNextServer(
       container
     );
 
-    console.log(
-      `⏳ Waiting for Next.js on port ${hostPort}...`
-    );
-
-    const serverReady =
+    const ready =
       await waitForServer(
         hostPort
       );
 
-    if (!serverReady) {
-      await printContainerLogs(
-        containerName
-      );
-
+    if (!ready) {
       throw new Error(
-        "Container is running, but Next.js did not become ready."
+        "Next.js did not become ready"
       );
     }
-
-    console.log(
-      "✅ New preview is ready"
-    );
 
     return {
       container,
       hostPort,
+      reused: false,
     };
   } catch (error) {
-    await printContainerLogs(
-      containerName
-    );
-
     await removeContainer(
       containerName
     );
@@ -1751,100 +2193,70 @@ async function createAndStartPreviewContainer(
   }
 }
 
-/* =========================================================
-   RUNTIME INSPECTION
-========================================================= */
+// =========================================================
+// UPDATE PREVIEW
+// =========================================================
 
-async function inspectContainerRuntime(
-  container: Docker.Container
-): Promise<void> {
-  console.log(
-    "======================================"
-  );
-
-  console.log(
-    "🔎 CONTAINER RUNTIME CHECK"
-  );
-
-  console.log(
-    "======================================"
+async function updatePreview(
+  container: Docker.Container,
+  files: ProjectFile[]
+): Promise<SyncResult> {
+  await ensureContainerRunning(
+    container
   );
 
   const result =
-    await execInContainer(
+    await syncFilesToContainer(
       container,
-      [
-        "sh",
-        "-c",
-        `
-          echo "=== PWD ==="
-          pwd
-
-          echo "=== FILES ==="
-          ls -la /app
-
-          echo "=== NODE ==="
-          node -v
-
-          echo "=== NPM ==="
-          npm -v
-
-          echo "=== NEXT ==="
-          if [ -f /app/node_modules/.bin/next ]; then
-            /app/node_modules/.bin/next --version
-          else
-            echo "NEXT NOT FOUND"
-          fi
-
-          echo "=== PROCESSES ==="
-          ps aux || true
-
-          echo "=== PORT 3000 ==="
-          if command -v ss >/dev/null 2>&1; then
-            ss -lntp || true
-          elif command -v netstat >/dev/null 2>&1; then
-            netstat -lntp || true
-          else
-            echo "ss/netstat not available"
-          fi
-
-          echo "=== LOCAL HTTP ==="
-          if command -v wget >/dev/null 2>&1; then
-            wget -S -O - --timeout=5 http://127.0.0.1:3000/ || true
-          elif command -v curl >/dev/null 2>&1; then
-            curl -I --max-time 5 http://127.0.0.1:3000/ || true
-          else
-            echo "wget/curl not available"
-          fi
-        `,
-      ]
+      files,
+      true
     );
 
-  console.log(
-    result.output
-  );
+  if (
+    result.dependenciesChanged
+  ) {
+    console.log(
+      "📦 Dependencies changed -> restarting Next"
+    );
 
-  console.log(
-    `🔎 Runtime check exit code: ${result.exitCode}`
-  );
+    await restartNextServer(
+      container
+    );
+  } else if (
+    result.configChanged
+  ) {
+    console.log(
+      "⚙️ next.config changed -> restarting Next"
+    );
 
-  console.log(
-    "======================================"
-  );
+    await restartNextServer(
+      container
+    );
+  } else if (
+    !(await isNextRunning(
+      container
+    ))
+  ) {
+    console.log(
+      "⚠️ Next.js is not running -> starting"
+    );
+
+    await startNextServer(
+      container
+    );
+  }
+
+  return result;
 }
 
-/* =========================================================
-   POST
-========================================================= */
+// =========================================================
+// MAIN POST
+// =========================================================
 
 export async function POST(
   req: NextRequest
 ) {
   try {
-    /* =====================================================
-       1. READ REQUEST
-    ===================================================== */
-
     const body =
       await req.json();
 
@@ -1870,14 +2282,15 @@ export async function POST(
       );
     }
 
-    /* =====================================================
-       2. VERIFY PROJECT
-    ===================================================== */
+    // -----------------------------------------
+    // VERIFY PROJECT
+    // -----------------------------------------
 
     const project =
       await prisma.project.findFirst({
         where: {
           id: projectId,
+          ownerId,
         },
       });
 
@@ -1893,323 +2306,191 @@ export async function POST(
       );
     }
 
-    /* =====================================================
-       3. WORKSPACE
-    ===================================================== */
+    const projectFiles =
+      files as ProjectFile[];
 
-    const userWorkDir =
-      path.resolve(
-        process.cwd(),
-        "WORKSPACE",
-        ownerId,
-        projectId
-      );
-
-    await fs.mkdir(
-      userWorkDir,
-      {
-        recursive: true,
-      }
-    );
-
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "📦 PROJECT:",
-      projectId
-    );
-
-    console.log(
-      "📁 WORKSPACE:",
-      userWorkDir
-    );
-
-    console.log(
-      "📄 ROOT FILE COUNT:",
-      files.length
-    );
-
-    /* =====================================================
-       4. SYNC TO HOST
-    ===================================================== */
-
-    await syncWorkspace(
-      userWorkDir,
-      files as ProjectFile[]
-    );
-
-    /* =====================================================
-       5. IMAGE
-    ===================================================== */
-
-    const fullImageTag =
-      `preview-image-${projectId}:latest`;
-
-    const images =
-      await docker.listImages();
-
-    const imageExists =
-      images.some(
-        (image) =>
-          image.RepoTags?.includes(
-            fullImageTag
-          )
-      );
-
-    if (!imageExists) {
-      console.log(
-        "🐳 Docker image does not exist. Building..."
-      );
-
-      await buildProjectImage(
-        fullImageTag,
-        userWorkDir
-      );
-    } else {
-      console.log(
-        "♻️ Docker runtime image already exists."
-      );
-    }
-
-    /* =====================================================
-       6. CONTAINER
-    ===================================================== */
-
-    const containerName =
-      `preview-container-${projectId}`;
+    // -----------------------------------------
+    // IMPORTANT:
+    //
+    // EVERYTHING for this project is now
+    // inside ONE lock.
+    //
+    // This prevents:
+    //
+    // Request A -> upload new content
+    // Request B -> upload old content
+    // Request A -> verify old content
+    //
+    // -----------------------------------------
 
     const result =
-      await withContainerLock(
+      await withProjectLock(
         projectId,
         async () => {
-          console.log(
-            "======================================"
-          );
-
-          console.log(
-            "🐳 CHECKING PREVIEW CONTAINER"
-          );
-
-          console.log(
-            `📦 Project: ${projectId}`
-          );
-
-          console.log(
-            `🐳 Container: ${containerName}`
-          );
+          const flattenedIncoming =
+            flattenFiles(
+              projectFiles
+            );
 
           console.log(
             "======================================"
           );
+          console.log(
+            "📦 INCOMING FILES"
+          );
+          console.log(
+            `Project: ${projectId}`
+          );
+          console.log(
+            `Files: ${flattenedIncoming.length}`
+          );
+          console.log(
+            "======================================"
+          );
+
+          for (
+            const file of flattenedIncoming
+          ) {
+            console.log(
+              `📄 ${file.name} (${file.content?.length ?? 0} bytes)`
+            );
+          }
+
+          // -------------------------------------
+          // WORKSPACE
+          // -------------------------------------
+
+          const workspace =
+            path.resolve(
+              process.cwd(),
+              "WORKSPACE",
+              ownerId,
+              projectId
+            );
+
+          await fs.mkdir(
+            workspace,
+            {
+              recursive: true,
+            }
+          );
+
+          // -------------------------------------
+          // SUPABASE
+          // -------------------------------------
+
+          await syncFilesToSupabase(
+            ownerId,
+            projectId,
+            projectFiles
+          );
+
+          // -------------------------------------
+          // HOST
+          // -------------------------------------
+
+          await syncWorkspace(
+            workspace,
+            projectFiles
+          );
+
+          // -------------------------------------
+          // IMAGE
+          // -------------------------------------
+
+          const imageTag =
+            `preview-image-${projectId}:latest`;
+
+          const images =
+            await docker.listImages();
+
+          const imageExists =
+            images.some(
+              (image) =>
+                image.RepoTags?.includes(
+                  imageTag
+                )
+            );
+
+          if (!imageExists) {
+            await buildProjectImage(
+              imageTag,
+              workspace
+            );
+          }
+
+          // -------------------------------------
+          // CONTAINER
+          // -------------------------------------
+
+          const containerName =
+            `preview-container-${projectId}`;
 
           const existing =
             await getExistingContainer(
               containerName
             );
 
-          /* =================================================
-             NO EXISTING CONTAINER
-          ================================================= */
+          // =====================================
+          // CREATE
+          // =====================================
 
           if (!existing) {
             console.log(
-              "🆕 No existing container found."
+              "🆕 Creating new preview"
             );
 
-            const {
-              container,
-              hostPort,
-            } =
-              await createAndStartPreviewContainer(
-                fullImageTag,
-                containerName,
-                projectId,
-                files as ProjectFile[]
-              );
-
-            await inspectContainerRuntime(
-              container
+            return await createPreview(
+              imageTag,
+              containerName,
+              projectId,
+              projectFiles
             );
-
-            return {
-              container,
-              hostPort,
-              reused: false,
-            };
           }
 
-          /* =================================================
-             EXISTING CONTAINER
-          ================================================= */
+          // =====================================
+          // UPDATE
+          // =====================================
+
+          console.log(
+            "♻️ Updating existing preview"
+          );
 
           const {
             container,
             info,
           } = existing;
 
-          console.log(
-            "♻️ Existing container found"
+          await ensureContainerRunning(
+            container
           );
 
-          console.log(
-            `🐳 Container ID: ${container.id}`
-          );
-
-          console.log(
-            `▶️ Running: ${info.State?.Running}`
-          );
-
-          let hostPort =
+          const hostPort =
             getContainerHostPort(
               info
             );
 
           if (!hostPort) {
             throw new Error(
-              "Existing container has no host port mapping."
+              "Existing container has no host port mapping"
             );
           }
 
-          /* =================================================
-             STOPPED CONTAINER
-          ================================================= */
-
-          if (!info.State?.Running) {
-            console.log(
-              "⚠️ Container exists but is stopped."
-            );
-
-            /*
-             * Start BEFORE any docker exec().
-             */
-            await ensureContainerRunning(
-              container
-            );
-
-            /*
-             * Sync after container is running.
-             */
-            const updateResult =
-              await syncFilesToContainer(
-                container,
-                files as ProjectFile[],
-                {
-                  existingContainer:
-                    true,
-                }
-              );
-
-            /*
-             * The old container may have
-             * no Next process at all.
-             */
-            if (
-              updateResult.dependenciesChanged
-            ) {
-              console.log(
-                "📦 Dependencies changed."
-              );
-            }
-
-            await startNextServer(
-              container
-            );
-
-            const serverReady =
-              await waitForServer(
-                hostPort
-              );
-
-            if (!serverReady) {
-              await printContainerLogs(
-                containerName
-              );
-
-              throw new Error(
-                "Existing container started, but Next.js did not become ready."
-              );
-            }
-
-            return {
-              container,
-              hostPort,
-              reused: true,
-            };
-          }
-
-          /* =================================================
-             RUNNING CONTAINER
-          ================================================= */
-
-          console.log(
-            "✅ Container already running"
+          await updatePreview(
+            container,
+            projectFiles
           );
 
-          const updateResult =
-            await updateExistingContainer(
-              container,
-              files as ProjectFile[]
-            );
-
-          /*
-           * If package dependencies changed,
-           * restart Next.js so it reloads the
-           * dependency graph.
-           */
-          if (
-            updateResult.dependenciesChanged
-          ) {
-            console.log(
-              "📦 Dependencies changed. Restarting Next.js..."
-            );
-
-            await restartNextServer(
-              container
-            );
-          } else if (
-            !(
-              await isNextRunning(
-                container
-              )
-            )
-          ) {
-            /*
-             * This fixes the exact state you
-             * currently have:
-             *
-             * container = running
-             * PID 1 = sleep infinity
-             * Next.js = NOT running
-             */
-            console.log(
-              "⚠️ Container is running but Next.js is not running."
-            );
-
-            await startNextServer(
-              container
-            );
-          }
-
-          const serverReady =
+          const ready =
             await waitForServer(
               hostPort
             );
 
-          if (!serverReady) {
-            await printContainerLogs(
-              containerName
-            );
-
+          if (!ready) {
             throw new Error(
-              "Container is running, but Next.js did not become ready."
+              "Updated preview is not responding"
             );
           }
-
-          console.log(
-            `🌐 Reusing port: ${hostPort}`
-          );
 
           return {
             container,
@@ -2219,27 +2500,25 @@ export async function POST(
         }
       );
 
-    /* =====================================================
-       7. PREVIEW URL
-    ===================================================== */
-
-    const {
-      container,
-      hostPort,
-      reused,
-    } = result;
+    // -----------------------------------------
+    // RESPONSE
+    // -----------------------------------------
 
     const previewUrl =
-      `http://localhost:${hostPort}`;
+      `http://localhost:${result.hostPort}`;
 
     console.log(
       "======================================"
     );
 
     console.log(
-      reused
-        ? "♻️ EXISTING PREVIEW REUSED"
-        : "🆕 NEW PREVIEW CREATED"
+      result.reused
+        ? "♻️ PREVIEW UPDATED"
+        : "🆕 PREVIEW CREATED"
+    );
+
+    console.log(
+      "☁️ SUPABASE UPDATED"
     );
 
     console.log(
@@ -2247,48 +2526,75 @@ export async function POST(
     );
 
     console.log(
-      `🐳 Container: ${containerName}`
-    );
-
-    console.log(
-      `🐳 Container ID: ${container.id}`
-    );
-
-    console.log(
-      "======================================"
-    );
-
-    return NextResponse.json({
-      previewUrl,
-      hotReload: true,
-      reused,
-    });
-  } catch (error: any) {
-    console.error(
-      "======================================"
-    );
-
-    console.error(
-      "❌ Docker Run API Error"
-    );
-
-    console.error(
-      error
-    );
-
-    console.error(
       "======================================"
     );
 
     return NextResponse.json(
       {
+        previewUrl,
+
+        hotReload: true,
+
+        reused:
+          result.reused,
+
+        containerName:
+          `preview-container-${projectId}`,
+
+        projectId,
+
+        supabaseSynced:
+          true,
+      },
+      {
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "❌ PREVIEW ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      {
         message:
-          error?.message ||
-          "Internal Server Error",
+          error instanceof Error
+            ? error.message
+            : "Internal server error",
+
+        supabaseSynced:
+          false,
       },
       {
         status: 500,
       }
     );
   }
+}
+
+// =========================================================
+// CONTAINER HOST PORT
+// =========================================================
+
+function getContainerHostPort(
+  info: Docker.ContainerInspectInfo
+): string | null {
+  const bindings =
+    info.NetworkSettings
+      ?.Ports?.[
+      "3000/tcp"
+    ];
+
+  if (
+    !bindings ||
+    bindings.length === 0
+  ) {
+    return null;
+  }
+
+  return (
+    bindings[0]?.HostPort ??
+    null
+  );
 }

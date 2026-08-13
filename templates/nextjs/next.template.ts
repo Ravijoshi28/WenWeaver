@@ -22,15 +22,16 @@ const templates: Record<string, string> = {
   },
 
   "dependencies": {
-    "next": "15.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "next": "^16.3.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
 
   "devDependencies": {
     "typescript": "^5",
     "@types/node": "^22",
-    "@types/react": "^19"
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
   }
 }
 `,
@@ -119,13 +120,13 @@ out
 `,
 
 "Dockerfile":`
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
 
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY . .
 
@@ -138,7 +139,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]`,
+CMD ["sh", "-c", "while true; do sleep 3600; done"]`,
 
 
 "app/layout.tsx": `

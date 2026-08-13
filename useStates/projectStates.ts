@@ -1,4 +1,3 @@
-
 import { create } from "zustand";
 import {
   persist,
@@ -11,22 +10,9 @@ import {
 
 export type FileNode = {
   name: string;
-
-  /*
-   * Full path from project root.
-   *
-   * Examples:
-   *
-   * app/page.tsx
-   * app/components/Button.tsx
-   * dashboard/page.tsx
-   */
   path: string;
-
   type: "file" | "folder";
-
   content?: string;
-
   children?: FileNode[];
 };
 
@@ -35,24 +21,9 @@ export type FileNode = {
 ========================================================= */
 
 export type SelectedFile = {
-  /*
-   * File name only.
-   *
-   * Example:
-   * page.tsx
-   */
   name: string;
-
-  /*
-   * FULL unique path.
-   *
-   * Example:
-   * app/page.tsx
-   */
   path: string;
-
   content: string;
-
   type: "file";
 };
 
@@ -83,7 +54,167 @@ interface ProjectState {
     file: SelectedFile | null
   ) => void;
 
+  updateFileContent: (
+    filePath: string,
+    content: string
+  ) => void;
+
+  getFileByPath: (
+    filePath: string
+  ) => FileNode | null;
+
   clearProject: () => void;
+}
+
+/* =========================================================
+   PATH NORMALIZATION
+========================================================= */
+
+function normalizePath(
+  value?: string
+): string {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "");
+}
+
+/* =========================================================
+   UPDATE FILE TREE
+========================================================= */
+
+function updateFileTree(
+  nodes: FileNode[],
+  targetPath: string,
+  content: string,
+  parentPath = ""
+): {
+  files: FileNode[];
+  updated: boolean;
+} {
+  const normalizedTarget =
+    normalizePath(targetPath);
+
+  let updated = false;
+
+  const updatedNodes =
+    nodes.map((node) => {
+      const currentPath =
+        normalizePath(
+          parentPath
+            ? `${parentPath}/${node.name}`
+            : node.name
+        );
+
+      /* =====================================================
+         FILE
+      ===================================================== */
+
+      if (
+        node.type === "file" &&
+        currentPath === normalizedTarget
+      ) {
+        updated = true;
+
+        return {
+          ...node,
+          path: currentPath,
+          content,
+        };
+      }
+
+      /* =====================================================
+         FOLDER
+      ===================================================== */
+
+      if (
+        node.type === "folder" &&
+        Array.isArray(node.children)
+      ) {
+        const result =
+          updateFileTree(
+            node.children,
+            normalizedTarget,
+            content,
+            currentPath
+          );
+
+        if (result.updated) {
+          updated = true;
+        }
+
+        return {
+          ...node,
+          path: currentPath,
+          children: result.files,
+        };
+      }
+
+      return {
+        ...node,
+        path: currentPath,
+      };
+    });
+
+  return {
+    files: updatedNodes,
+    updated,
+  };
+}
+
+/* =========================================================
+   FIND FILE
+========================================================= */
+
+function findFile(
+  nodes: FileNode[],
+  targetPath: string,
+  parentPath = ""
+): FileNode | null {
+  const normalizedTarget =
+    normalizePath(targetPath);
+
+  for (const node of nodes) {
+    const currentPath =
+      normalizePath(
+        parentPath
+          ? `${parentPath}/${node.name}`
+          : node.name
+      );
+
+    if (
+      node.type === "file" &&
+      currentPath === normalizedTarget
+    ) {
+      return {
+        ...node,
+        path: currentPath,
+      };
+    }
+
+    if (
+      node.type === "folder" &&
+      Array.isArray(node.children)
+    ) {
+      const result =
+        findFile(
+          node.children,
+          normalizedTarget,
+          currentPath
+        );
+
+      if (result) {
+        return result;
+      }
+    }
+  }
+
+  return null;
 }
 
 /* =========================================================
@@ -93,70 +224,200 @@ interface ProjectState {
 export const useProjectState =
   create<ProjectState>()(
     persist(
-      (set) => ({
-        /* =================================================
+      (set, get) => ({
+        /* ===================================================
            PROJECT
-        ================================================= */
+        =================================================== */
 
         project: {
           projectId: null,
           ownerId: null,
         },
 
-        /* =================================================
+        /* ===================================================
            FILES
-        ================================================= */
+        =================================================== */
 
         files: [],
 
-        /* =================================================
+        /* ===================================================
            SELECTED FILE
-        ================================================= */
+        =================================================== */
 
         selectedFile: null,
 
-        /* =================================================
+        /* ===================================================
            SET PROJECT
-        ================================================= */
+        =================================================== */
 
         setProjectId: (
           id,
           ownerId
-        ) =>
+        ) => {
           set({
             project: {
               projectId: id,
               ownerId,
             },
-          }),
+          });
+        },
 
-        /* =================================================
+        /* ===================================================
            SET FILES
-        ================================================= */
+        =================================================== */
 
         setFiles: (
           files
-        ) =>
+        ) => {
           set({
             files,
-          }),
+          });
 
-        /* =================================================
+          /*
+           * Keep selectedFile synchronized
+           * with the new file tree.
+           */
+
+          const selected =
+            get().selectedFile;
+
+          if (!selected) {
+            return;
+          }
+
+          const updatedSelected =
+            findFile(
+              files,
+              selected.path
+            );
+
+          if (!updatedSelected) {
+            return;
+          }
+
+          set({
+            selectedFile: {
+              name:
+                updatedSelected.name,
+
+              path:
+                normalizePath(
+                  updatedSelected.path
+                ),
+
+              content:
+                updatedSelected.content ??
+                "",
+
+              type: "file",
+            },
+          });
+        },
+
+        /* ===================================================
            SELECT FILE
-        ================================================= */
+        =================================================== */
 
         setSelectedFile: (
           file
-        ) =>
+        ) => {
+          if (!file) {
+            set({
+              selectedFile: null,
+            });
+
+            return;
+          }
+
           set({
-            selectedFile: file,
-          }),
+            selectedFile: {
+              ...file,
+              path:
+                normalizePath(
+                  file.path
+                ),
+            },
+          });
+          console.log(file, "SELECTED FILE");
+        },
 
-        /* =================================================
+        /* ===================================================
+           UPDATE FILE CONTENT
+        =================================================== */
+
+        updateFileContent: (
+          filePath,
+          content
+        ) => {
+          const normalizedPath =
+            normalizePath(filePath);
+
+          const currentFiles =
+            get().files;
+
+          const result =
+            updateFileTree(
+              currentFiles,
+              normalizedPath,
+              content
+            );
+
+          if (!result.updated) {
+            console.warn(
+              "⚠️ updateFileContent: file not found",
+              normalizedPath
+            );
+
+            return;
+          }
+
+          const selected =
+            get().selectedFile;
+
+          set({
+            files:
+              result.files,
+
+            selectedFile:
+              selected &&
+              normalizePath(
+                selected.path
+              ) === normalizedPath
+                ? {
+                    ...selected,
+
+                    path:
+                      normalizedPath,
+
+                    content,
+                  }
+                : selected,
+          });
+
+          console.log(
+            "💾 ZUSTAND FILE UPDATED:",
+            normalizedPath
+          );
+        },
+
+        /* ===================================================
+           GET FILE
+        =================================================== */
+
+        getFileByPath: (
+          filePath
+        ) => {
+          return findFile(
+            get().files,
+            normalizePath(filePath)
+          );
+        },
+
+        /* ===================================================
            CLEAR PROJECT
-        ================================================= */
+        =================================================== */
 
-        clearProject: () =>
+        clearProject: () => {
           set({
             project: {
               projectId: null,
@@ -166,8 +427,13 @@ export const useProjectState =
             files: [],
 
             selectedFile: null,
-          }),
+          });
+        },
       }),
+
+      /* =====================================================
+         PERSIST
+      ===================================================== */
 
       {
         name: "project-storage",
@@ -177,25 +443,22 @@ export const useProjectState =
             () => sessionStorage
           ),
 
-        /*
-         * Important:
-         *
-         * Zustand persisted state from an older
-         * version may not contain selectedFile.path.
-         *
-         * This migration removes an invalid old
-         * selectedFile rather than allowing the
-         * editor to accidentally update the wrong file.
-         */
-        version: 2,
+        version: 3,
 
         migrate: (
           persistedState: any,
           version
         ) => {
-          if (
-            version < 2
-          ) {
+          if (!persistedState) {
+            return undefined;
+          }
+
+          /*
+           * Version 1/2 may contain an invalid
+           * selectedFile.
+           */
+
+          if (version < 3) {
             return {
               ...persistedState,
 
@@ -203,7 +466,16 @@ export const useProjectState =
                 persistedState
                   ?.selectedFile
                   ?.path
-                  ? persistedState.selectedFile
+                  ? {
+                      ...persistedState.selectedFile,
+
+                      path:
+                        normalizePath(
+                          persistedState
+                            .selectedFile
+                            .path
+                        ),
+                    }
                   : null,
             };
           }

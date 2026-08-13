@@ -63,7 +63,7 @@ export default function FileExplorer({
     isError,
   } = useQuery({
     queryKey: [
-      "project-files",
+      "Files",
       project?.ownerId,
       pid,
     ],
@@ -154,7 +154,7 @@ export default function FileExplorer({
          * The path is the real identity.
          */
         setSelectedFile({
-          name: file.name,
+           name: file.name,
           path: file.path,
           content:
             file.content ?? "",

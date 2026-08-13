@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { VerifyRefreshToken } from "@/lib/verify";
 import { prisma } from "@/lib/prisma";
 import { AccessToken } from "@/lib/cookieGenerator";
-import { error } from "console";
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     return response;
 
-  } catch {
+  } catch(error) {
     console.log(error)
     return NextResponse.redirect(
       new URL("/login", req.url)
