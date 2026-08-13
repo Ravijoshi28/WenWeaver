@@ -44,7 +44,9 @@ export type FileNode = {
 // NORMALIZE PATH
 // =====================================================
 
-function normalizePath(value?: string): string {
+function normalizePath(
+  value?: string
+): string {
   if (!value) return "";
 
   return value
@@ -83,7 +85,10 @@ function findFileByPath(
 
   for (const node of nodes) {
     const currentPath =
-      getNodePath(node, parentPath);
+      getNodePath(
+        node,
+        parentPath
+      );
 
     if (
       node.type === "file" &&
@@ -100,11 +105,12 @@ function findFileByPath(
       node.type === "folder" &&
       Array.isArray(node.children)
     ) {
-      const found = findFileByPath(
-        node.children,
-        normalizedTarget,
-        currentPath
-      );
+      const found =
+        findFileByPath(
+          node.children,
+          normalizedTarget,
+          currentPath
+        );
 
       if (found) {
         return found;
@@ -129,35 +135,47 @@ function getLanguageFromFileName(
   const name =
     filename.toLowerCase();
 
-  if (name.endsWith(".tsx"))
+  if (name.endsWith(".tsx")) {
     return "typescriptreact";
+  }
 
-  if (name.endsWith(".jsx"))
+  if (name.endsWith(".jsx")) {
     return "javascriptreact";
+  }
 
-  if (name.endsWith(".ts"))
+  if (name.endsWith(".ts")) {
     return "typescript";
+  }
 
-  if (name.endsWith(".js"))
+  if (name.endsWith(".js")) {
     return "javascript";
+  }
 
-  if (name.endsWith(".css"))
+  if (name.endsWith(".css")) {
     return "css";
+  }
 
-  if (name.endsWith(".scss"))
+  if (name.endsWith(".scss")) {
     return "scss";
+  }
 
-  if (name.endsWith(".json"))
+  if (name.endsWith(".json")) {
     return "json";
+  }
 
-  if (name.endsWith(".md"))
+  if (name.endsWith(".md")) {
     return "markdown";
+  }
+
+  if (name.endsWith(".html")) {
+    return "html";
+  }
 
   return "plaintext";
 }
 
 // =====================================================
-// UPDATE FILE IN ZUSTAND
+// UPDATE FILE IN TREE
 // =====================================================
 
 function updateFileInTree(
@@ -184,6 +202,10 @@ function updateFileInTree(
           parentPath
         );
 
+      // -----------------------------------------------
+      // FILE
+      // -----------------------------------------------
+
       if (
         node.type === "file" &&
         normalizePath(currentPath) ===
@@ -193,10 +215,16 @@ function updateFileInTree(
 
         return {
           ...node,
+
           path: currentPath,
+
           content,
         };
       }
+
+      // -----------------------------------------------
+      // FOLDER
+      // -----------------------------------------------
 
       if (
         node.type === "folder" &&
@@ -204,7 +232,9 @@ function updateFileInTree(
       ) {
         return {
           ...node,
+
           path: currentPath,
+
           children:
             updateRecursive(
               node.children,
@@ -213,18 +243,39 @@ function updateFileInTree(
         };
       }
 
+      // -----------------------------------------------
+      // OTHER
+      // -----------------------------------------------
+
       return {
         ...node,
+
         path: currentPath,
       };
     });
   }
 
   return {
-    files: updateRecursive(files),
+    files:
+      updateRecursive(files),
+
     updated,
   };
 }
+
+// =====================================================
+// PREVIEW RESPONSE
+// =====================================================
+
+type PreviewResponse = {
+  success: boolean;
+
+  projectId: string;
+
+  previewUrl: string;
+
+  message?: string;
+};
 
 // =====================================================
 // MAIN EDITOR
@@ -251,17 +302,25 @@ export function MainEditor() {
   // LOCAL STATE
   // ===================================================
 
-  const [previewUrl, setPreviewUrl] =
-    useState<string | null>(null);
+  const [
+    previewUrl,
+    setPreviewUrl,
+  ] = useState<string | null>(
+    null
+  );
 
-  const [isRunning, setIsRunning] =
-    useState(false);
+  const [
+    isRunning,
+    setIsRunning,
+  ] = useState(false);
 
-  const [isSaving, setIsSaving] =
-    useState(false);
+  const [
+    isSaving,
+    setIsSaving,
+  ] = useState(false);
 
   // ===================================================
-  // EDITOR REFS
+  // EDITOR REF
   // ===================================================
 
   const editorRef =
@@ -269,14 +328,22 @@ export function MainEditor() {
       Monaco.editor.IStandaloneCodeEditor | null
     >(null);
 
+  // ===================================================
+  // YJS REFS
+  // ===================================================
+
   const ydocRef =
     useRef<Y.Doc | null>(null);
 
   const providerRef =
-    useRef<WebsocketProvider | null>(null);
+    useRef<WebsocketProvider | null>(
+      null
+    );
 
   const bindingRef =
-    useRef<MonacoBinding | null>(null);
+    useRef<MonacoBinding | null>(
+      null
+    );
 
   const currentYTextRef =
     useRef<Y.Text | null>(null);
@@ -284,20 +351,43 @@ export function MainEditor() {
   const syncedRef =
     useRef(false);
 
+  // ===================================================
+  // YJS OBSERVER REF
+  // ===================================================
+
   const ytextObserverRef =
     useRef<{
       ytext: Y.Text;
+
       observer: (
-        event: any
+        event: Y.YTextEvent,
+        transaction: Y.Transaction
       ) => void;
     } | null>(null);
 
   // ===================================================
-  // CLEANUP BINDING
+  // MONACO CHANGE LISTENER
+  // ===================================================
+
+  const editorChangeListenerRef =
+    useRef<Monaco.IDisposable | null>(
+      null
+    );
+
+  // ===================================================
+  // CLEANUP YJS BINDING
   // ===================================================
 
   const cleanupBinding =
     useCallback(() => {
+      console.log(
+        "🧹 Cleaning YJS binding"
+      );
+
+      // -----------------------------------------------
+      // YJS OBSERVER
+      // -----------------------------------------------
+
       if (
         ytextObserverRef.current
       ) {
@@ -315,6 +405,10 @@ export function MainEditor() {
           null;
       }
 
+      // -----------------------------------------------
+      // MONACO BINDING
+      // -----------------------------------------------
+
       if (
         bindingRef.current
       ) {
@@ -324,12 +418,16 @@ export function MainEditor() {
           null;
       }
 
+      // -----------------------------------------------
+      // CURRENT YTEXT
+      // -----------------------------------------------
+
       currentYTextRef.current =
         null;
     }, []);
 
   // ===================================================
-  // UPDATE ZUSTAND
+  // UPDATE FILE IN ZUSTAND
   // ===================================================
 
   const updateFileInStore =
@@ -338,27 +436,55 @@ export function MainEditor() {
         filePath: string,
         content: string
       ): FileNode[] => {
+        const normalizedFilePath =
+          normalizePath(filePath);
+
+        if (
+          !normalizedFilePath
+        ) {
+          console.warn(
+            "⚠️ Cannot update file without path"
+          );
+
+          return (
+            useProjectState.getState()
+              .files as FileNode[]
+          );
+        }
+
         const state =
           useProjectState.getState();
 
         const files =
           state.files as FileNode[];
 
+        // ---------------------------------------------
+        // UPDATE BY FULL PATH
+        // ---------------------------------------------
+
         const result =
           updateFileInTree(
             files,
-            filePath,
+            normalizedFilePath,
             content
           );
 
+        // ---------------------------------------------
+        // FILE NOT FOUND
+        // ---------------------------------------------
+
         if (!result.updated) {
           console.warn(
-            "⚠️ File not found:",
-            filePath
+            "⚠️ File not found in Zustand:",
+            normalizedFilePath
           );
 
           return files;
         }
+
+        // ---------------------------------------------
+        // CURRENT SELECTED FILE
+        // ---------------------------------------------
 
         const selected =
           state.selectedFile;
@@ -369,39 +495,133 @@ export function MainEditor() {
               selected?.name
           );
 
+        // ---------------------------------------------
+        // UPDATE ZUSTAND
+        // ---------------------------------------------
+
         useProjectState.setState({
-          files: result.files,
+          files:
+            result.files,
 
           selectedFile:
             selectedPath ===
-            normalizePath(filePath)
+            normalizedFilePath
               ? {
                   ...(selected ?? {}),
 
-                  path:
-                    normalizePath(
-                      filePath
-                    ),
-
                   name:
                     selected?.name ??
-                    normalizePath(
-                      filePath
-                    )
+                    normalizedFilePath
                       .split("/")
                       .pop() ??
                     "",
 
-                  content,
+                  path:
+                    normalizedFilePath,
 
                   type: "file",
+
+                  content,
                 }
               : selected,
         });
 
+        console.log(
+          "✅ Zustand updated:",
+          normalizedFilePath
+        );
+
         return result.files;
       },
       []
+    );
+
+  // ===================================================
+  // MONACO → ZUSTAND
+  // ===================================================
+
+  const setupEditorChangeListener =
+    useCallback(
+      (
+        editor: Monaco.editor.IStandaloneCodeEditor
+      ) => {
+        // ---------------------------------------------
+        // REMOVE OLD LISTENER
+        // ---------------------------------------------
+
+        if (
+          editorChangeListenerRef.current
+        ) {
+          editorChangeListenerRef.current.dispose();
+
+          editorChangeListenerRef.current =
+            null;
+        }
+
+        // ---------------------------------------------
+        // CREATE NEW LISTENER
+        // ---------------------------------------------
+
+        editorChangeListenerRef.current =
+          editor.onDidChangeModelContent(
+            () => {
+              const model =
+                editor.getModel();
+
+              if (!model) {
+                console.warn(
+                  "⚠️ Monaco model missing"
+                );
+
+                return;
+              }
+
+              // Monaco URI path can begin with /
+              const modelPath =
+                normalizePath(
+                  model.uri.path
+                );
+
+              if (!modelPath) {
+                console.warn(
+                  "⚠️ Monaco model has no path"
+                );
+
+                return;
+              }
+
+              const content =
+                model.getValue();
+
+              console.log(
+                "📝 Monaco changed:",
+                modelPath
+              );
+
+              console.log(
+                "📏 Content length:",
+                content.length
+              );
+
+              // -----------------------------------------
+              // IMPORTANT:
+              // MONACO → ZUSTAND
+              // -----------------------------------------
+
+              updateFileInStore(
+                modelPath,
+                content
+              );
+            }
+          );
+
+        console.log(
+          "👂 Monaco change listener attached"
+        );
+      },
+      [
+        updateFileInStore,
+      ]
     );
 
   // ===================================================
@@ -416,26 +636,48 @@ export function MainEditor() {
         files,
       }: {
         ownerId: string;
+
         projectId: string;
+
         files: FileNode[];
-      }) =>
-        SaveFile(
+      }) => {
+        console.log(
+          "📤 Sending files to SaveFile:",
+          {
+            ownerId,
+            projectId,
+            fileCount:
+              files.length,
+          }
+        );
+
+        return SaveFile(
           ownerId,
           projectId,
           files
-        ),
-
-      onMutate: () => {
-        setIsSaving(true);
-      },
-
-      onSuccess: () => {
-        console.log(
-          "💾 Files saved successfully"
         );
       },
 
-      onError: (error) => {
+      onMutate: () => {
+        console.log(
+          "💾 Save started"
+        );
+
+        setIsSaving(true);
+      },
+
+      onSuccess: (
+        data
+      ) => {
+        console.log(
+          "✅ Files saved successfully:",
+          data
+        );
+      },
+
+      onError: (
+        error
+      ) => {
         console.error(
           "❌ Save failed:",
           error
@@ -467,25 +709,42 @@ export function MainEditor() {
       const projectId =
         project?.projectId;
 
+      // -----------------------------------------------
+      // VALIDATE PROJECT
+      // -----------------------------------------------
+
       if (
         !ownerId ||
         !projectId
       ) {
         console.warn(
-          "⚠️ Owner ID or Project ID missing"
+          "⚠️ Owner ID or Project ID missing",
+          {
+            ownerId,
+            projectId,
+          }
         );
 
         return;
       }
+
+      // -----------------------------------------------
+      // ALWAYS GET LATEST ZUSTAND STATE
+      // -----------------------------------------------
 
       const state =
         useProjectState.getState();
 
       const files =
         state.files as FileNode[];
+        console.log(files);
+
+      // -----------------------------------------------
+      // VALIDATE FILES
+      // -----------------------------------------------
 
       if (
-        !files ||
+        !Array.isArray(files) ||
         files.length === 0
       ) {
         console.warn(
@@ -500,9 +759,20 @@ export function MainEditor() {
         projectId
       );
 
+      console.log(
+        "📁 Saving file nodes:",
+        files.length
+      );
+
+      // -----------------------------------------------
+      // SAVE
+      // -----------------------------------------------
+      console.log(files);
       saveMutation.mutate({
         ownerId,
+
         projectId,
+
         files,
       });
     }, [
@@ -524,18 +794,36 @@ export function MainEditor() {
         files,
       }: {
         projectId: string;
+
         files: FileNode[];
-      }) =>
-        runPreview(
+      }) => {
+        console.log(
+          "🚀 Calling runPreview:",
+          projectId
+        );
+
+        console.log(
+          "📁 Preview files:",
+          files.length
+        );
+
+        return runPreview(
           projectId,
           files
-        ),
+        );
+      },
 
       onMutate: () => {
+        console.log(
+          "▶️ Preview started"
+        );
+
         setIsRunning(true);
       },
 
-      onSuccess: (data) => {
+      onSuccess: (
+        data
+      ) => {
         console.log(
           "🟢 Preview ready:",
           data.previewUrl
@@ -546,7 +834,9 @@ export function MainEditor() {
         );
       },
 
-      onError: (error) => {
+      onError: (
+        error
+      ) => {
         console.error(
           "❌ Preview error:",
           error
@@ -560,6 +850,10 @@ export function MainEditor() {
       },
 
       onSettled: () => {
+        console.log(
+          "⏹️ Preview finished"
+        );
+
         setIsRunning(false);
       },
     });
@@ -568,7 +862,7 @@ export function MainEditor() {
   // RUN PREVIEW
   //
   // IMPORTANT:
-  // This DOES NOT call SaveFile.
+  // DOES NOT SAVE TO SUPABASE
   // ===================================================
 
   const handleRun =
@@ -584,14 +878,22 @@ export function MainEditor() {
         return;
       }
 
+      // -----------------------------------------------
+      // GET ABSOLUTELY LATEST ZUSTAND STATE
+      // -----------------------------------------------
+
       const state =
         useProjectState.getState();
 
       const files =
         state.files as FileNode[];
 
+      // -----------------------------------------------
+      // VALIDATE
+      // -----------------------------------------------
+
       if (
-        !files ||
+        !Array.isArray(files) ||
         files.length === 0
       ) {
         console.warn(
@@ -607,12 +909,17 @@ export function MainEditor() {
       );
 
       console.log(
-        "📁 Sending files:",
+        "📁 Sending current Zustand files:",
         files.length
       );
 
+      // -----------------------------------------------
+      // PREVIEW ONLY
+      // -----------------------------------------------
+
       runMutation.mutate({
         projectId,
+
         files,
       });
     }, [
@@ -629,8 +936,16 @@ export function MainEditor() {
       project?.projectId;
 
     if (!projectId) {
+      console.log(
+        "⏳ Waiting for project ID..."
+      );
+
       return;
     }
+
+    // -----------------------------------------------
+    // PREVENT DUPLICATE CONNECTION
+    // -----------------------------------------------
 
     if (
       ydocRef.current &&
@@ -643,18 +958,26 @@ export function MainEditor() {
       "🔌 Connecting YJS..."
     );
 
+    console.log(
+      "🆔 Project:",
+      projectId
+    );
+
     const ydoc =
       new Y.Doc();
 
     const room =
       `project:${projectId}`;
 
-    /*
-     * IMPORTANT:
-     *
-     * Render HTTPS endpoint
-     * becomes WSS for WebSocket.
-     */
+    console.log(
+      "🚪 YJS room:",
+      room
+    );
+
+    // -----------------------------------------------
+    // RENDER YJS SERVER
+    // -----------------------------------------------
+
     const provider =
       new WebsocketProvider(
         "wss://webweaver-m0is.onrender.com",
@@ -671,6 +994,10 @@ export function MainEditor() {
     providerRef.current =
       provider;
 
+    // -----------------------------------------------
+    // AWARENESS
+    // -----------------------------------------------
+
     provider.awareness.setLocalStateField(
       "user",
       {
@@ -685,6 +1012,10 @@ export function MainEditor() {
           "#3b82f6",
       }
     );
+
+    // -----------------------------------------------
+    // STATUS
+    // -----------------------------------------------
 
     const statusHandler = ({
       status,
@@ -701,6 +1032,10 @@ export function MainEditor() {
       "status",
       statusHandler
     );
+
+    // -----------------------------------------------
+    // SYNC
+    // -----------------------------------------------
 
     const syncHandler = (
       isSynced: boolean
@@ -725,6 +1060,11 @@ export function MainEditor() {
           .getState()
           .selectedFile?.path;
 
+      console.log(
+        "📂 Synced selected path:",
+        path
+      );
+
       if (
         editor &&
         path
@@ -741,6 +1081,10 @@ export function MainEditor() {
       syncHandler
     );
 
+    // -----------------------------------------------
+    // AWARENESS
+    // -----------------------------------------------
+
     const awarenessHandler =
       () => {
         console.log(
@@ -756,6 +1100,10 @@ export function MainEditor() {
       awarenessHandler
     );
 
+    // -----------------------------------------------
+    // CLEANUP
+    // -----------------------------------------------
+
     return () => {
       console.log(
         "🔴 Disconnecting YJS:",
@@ -763,6 +1111,16 @@ export function MainEditor() {
       );
 
       cleanupBinding();
+
+      // Monaco listener
+      if (
+        editorChangeListenerRef.current
+      ) {
+        editorChangeListenerRef.current.dispose();
+
+        editorChangeListenerRef.current =
+          null;
+      }
 
       provider.off(
         "status",
@@ -813,44 +1171,102 @@ export function MainEditor() {
         const provider =
           providerRef.current;
 
+        // ---------------------------------------------
+        // VALIDATE YJS
+        // ---------------------------------------------
+
         if (
           !ydoc ||
           !provider
         ) {
+          console.warn(
+            "⚠️ YJS not available"
+          );
+
           return;
         }
 
         if (
           !syncedRef.current
         ) {
+          console.warn(
+            "⚠️ YJS not synced yet"
+          );
+
           return;
         }
+
+        // ---------------------------------------------
+        // GET MONACO MODEL
+        // ---------------------------------------------
 
         const model =
           editor.getModel();
 
         if (!model) {
+          console.warn(
+            "⚠️ Monaco model missing"
+          );
+
           return;
         }
+
+        // ---------------------------------------------
+        // NORMALIZE PATH
+        // ---------------------------------------------
 
         const normalizedPath =
           normalizePath(
             filePath
           );
 
+        if (!normalizedPath) {
+          console.warn(
+            "⚠️ Cannot bind empty path"
+          );
+
+          return;
+        }
+
+        console.log(
+          "🔗 Binding file:",
+          normalizedPath
+        );
+
+        // ---------------------------------------------
+        // CLEAN OLD BINDING
+        // ---------------------------------------------
+
         cleanupBinding();
+
+        // ---------------------------------------------
+        // FILES MAP
+        // ---------------------------------------------
 
         const filesMap =
           ydoc.getMap<Y.Text>(
             "files"
           );
 
+        // ---------------------------------------------
+        // GET YTEXT BY FULL PATH
+        // ---------------------------------------------
+
         let ytext =
           filesMap.get(
             normalizedPath
           );
 
+        // ---------------------------------------------
+        // CREATE YTEXT IF MISSING
+        // ---------------------------------------------
+
         if (!ytext) {
+          console.log(
+            "🆕 Creating YJS file:",
+            normalizedPath
+          );
+
           ytext =
             new Y.Text();
 
@@ -867,8 +1283,13 @@ export function MainEditor() {
             existingFile?.content ??
             "";
 
+          console.log(
+            "📄 Initial content length:",
+            initialContent.length
+          );
+
           if (
-            initialContent
+            initialContent.length > 0
           ) {
             ytext.insert(
               0,
@@ -882,35 +1303,105 @@ export function MainEditor() {
           );
         }
 
+        // ---------------------------------------------
+        // YJS → ZUSTAND INITIAL SYNC
+        // ---------------------------------------------
+
+        const yjsContent =
+          ytext.toString();
+
+        const state =
+          useProjectState.getState();
+
+        const existingFile =
+          findFileByPath(
+            state.files as FileNode[],
+            normalizedPath
+          );
+
+        const zustandContent =
+          existingFile?.content ??
+          "";
+
+        if (
+          yjsContent !==
+          zustandContent
+        ) {
+          console.log(
+            "🔄 YJS → Zustand:",
+            normalizedPath
+          );
+
+          console.log(
+            "YJS length:",
+            yjsContent.length
+          );
+
+          console.log(
+            "Zustand length:",
+            zustandContent.length
+          );
+
+          updateFileInStore(
+            normalizedPath,
+            yjsContent
+          );
+        }
+
+        // ---------------------------------------------
+        // STORE CURRENT YTEXT
+        // ---------------------------------------------
+
         currentYTextRef.current =
           ytext;
 
+        // ---------------------------------------------
+        // YJS → ZUSTAND OBSERVER
+        // ---------------------------------------------
+
         const observer = (
-          _event: any,
+          _event: Y.YTextEvent,
           _transaction: Y.Transaction
         ) => {
+          const content =
+            ytext!.toString();
+
+          console.log(
+            "🔄 YJS changed:",
+            normalizedPath
+          );
+
           updateFileInStore(
             normalizedPath,
-            ytext!.toString()
+            content
           );
         };
 
         ytext.observe(
-          observer as any
+          observer
         );
 
         ytextObserverRef.current =
           {
             ytext,
-            observer:
-              observer as any,
+
+            observer,
           };
+
+        // ---------------------------------------------
+        // MONACO ↔ YJS
+        // ---------------------------------------------
 
         const binding =
           new MonacoBinding(
             ytext,
+
             model,
-            new Set([editor]),
+
+            new Set([
+              editor,
+            ]),
+
             provider.awareness
           );
 
@@ -918,7 +1409,7 @@ export function MainEditor() {
           binding;
 
         console.log(
-          "🔗 Bound:",
+          "✅ YJS binding complete:",
           normalizedPath
         );
       },
@@ -944,10 +1435,27 @@ export function MainEditor() {
       editorRef.current =
         editor;
 
+      // -----------------------------------------------
+      // MONACO → ZUSTAND
+      // -----------------------------------------------
+
+      setupEditorChangeListener(
+        editor
+      );
+
+      // -----------------------------------------------
+      // CURRENT FILE
+      // -----------------------------------------------
+
       const filePath =
         useProjectState
           .getState()
           .selectedFile?.path;
+
+      console.log(
+        "📂 Initial editor file:",
+        filePath
+      );
 
       if (
         filePath &&
@@ -959,9 +1467,10 @@ export function MainEditor() {
         );
       }
 
-      // =================================================
-      // CTRL + S → SAVE ONLY
-      // =================================================
+      // -----------------------------------------------
+      // CTRL + S
+      // SAVE ONLY
+      // -----------------------------------------------
 
       editor.addAction({
         id: "save-files",
@@ -974,6 +1483,10 @@ export function MainEditor() {
         ],
 
         run: () => {
+          console.log(
+            "💾 CTRL + S pressed"
+          );
+
           handleSave();
         },
       });
@@ -997,11 +1510,37 @@ export function MainEditor() {
       return;
     }
 
+    console.log(
+      "📂 Selected file changed:",
+      filePath
+    );
+
+    // -----------------------------------------------
+    // MAKE SURE MONACO → ZUSTAND LISTENER EXISTS
+    // -----------------------------------------------
+
+    setupEditorChangeListener(
+      editor
+    );
+
+    // -----------------------------------------------
+    // WAIT FOR YJS
+    // -----------------------------------------------
+
     if (
       !syncedRef.current
     ) {
+      console.log(
+        "⏳ Waiting for YJS sync before binding:",
+        filePath
+      );
+
       return;
     }
+
+    // -----------------------------------------------
+    // BIND NEW FILE
+    // -----------------------------------------------
 
     bindFileToYjs(
       editor,
@@ -1010,6 +1549,28 @@ export function MainEditor() {
   }, [
     selectedFile?.path,
     bindFileToYjs,
+    setupEditorChangeListener,
+  ]);
+
+  // ===================================================
+  // CLEANUP MONACO ON UNMOUNT
+  // ===================================================
+
+  useEffect(() => {
+    return () => {
+      if (
+        editorChangeListenerRef.current
+      ) {
+        editorChangeListenerRef.current.dispose();
+
+        editorChangeListenerRef.current =
+          null;
+      }
+
+      cleanupBinding();
+    };
+  }, [
+    cleanupBinding,
   ]);
 
   // ===================================================
@@ -1044,6 +1605,10 @@ export function MainEditor() {
             monaco.languages.typescript
               .JsxEmit.ReactJSX,
 
+          target:
+            monaco.languages.typescript
+              .ScriptTarget.Latest,
+
           allowJs: true,
 
           allowNonTsExtensions:
@@ -1052,13 +1617,17 @@ export function MainEditor() {
     };
 
   // ===================================================
-  // RENDER
+  // DEFAULT CONTENT
   // ===================================================
 
   const defaultContent =
 `export function Welcome() {
   console.log("Welcome dear Friend !!!");
 }`;
+
+  // ===================================================
+  // CURRENT PATH
+  // ===================================================
 
   const currentPath =
     normalizePath(
@@ -1067,15 +1636,23 @@ export function MainEditor() {
     ) ||
     "app/page.tsx";
 
+  // ===================================================
+  // LANGUAGE
+  // ===================================================
+
   const currentLanguage =
     getLanguageFromFileName(
       currentPath
     );
 
+  // ===================================================
+  // RENDER
+  // ===================================================
+
   return (
     <div className="flex h-full w-full">
 
-      {/* ================================================
+      {/* =================================================
           EDITOR
       ================================================= */}
 
@@ -1100,8 +1677,7 @@ export function MainEditor() {
             handleEditorMount
           }
           options={{
-            automaticLayout:
-              true,
+            automaticLayout: true,
 
             minimap: {
               enabled: true,
@@ -1117,11 +1693,13 @@ export function MainEditor() {
           }}
         />
 
-        {/* ==============================================
-            RUN BUTTON
-        =============================================== */}
+        {/* =================================================
+            BUTTONS
+        ================================================= */}
 
         <div className="absolute right-4 top-4 z-30 flex gap-2">
+
+          {/* SAVE */}
 
           <button
             type="button"
@@ -1137,6 +1715,8 @@ export function MainEditor() {
               ? "Saving..."
               : "Save"}
           </button>
+
+          {/* RUN */}
 
           <button
             type="button"
@@ -1157,7 +1737,7 @@ export function MainEditor() {
 
       </div>
 
-      {/* ================================================
+      {/* =================================================
           PREVIEW
       ================================================= */}
 
@@ -1165,6 +1745,7 @@ export function MainEditor() {
 
         {previewUrl ? (
           <iframe
+            key={previewUrl}
             src={previewUrl}
             className="h-full w-full border-none bg-white"
             title="Project Preview"
