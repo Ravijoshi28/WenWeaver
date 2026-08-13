@@ -23,6 +23,15 @@ import { useProjectState } from "@/useStates/projectStates";
 
 import { useMutation } from "@tanstack/react-query";
 
+import {
+  SaveFile,
+  runPreview,
+} from "@/ApiCalls/docker/docker";
+
+// =====================================================
+// FILE TYPE
+// =====================================================
+
 export type FileNode = {
   name: string;
   path: string;
@@ -35,9 +44,7 @@ export type FileNode = {
 // NORMALIZE PATH
 // =====================================================
 
-function normalizePath(
-  value?: string
-): string {
+function normalizePath(value?: string): string {
   if (!value) return "";
 
   return value
@@ -93,12 +100,11 @@ function findFileByPath(
       node.type === "folder" &&
       Array.isArray(node.children)
     ) {
-      const found =
-        findFileByPath(
-          node.children,
-          normalizedTarget,
-          currentPath
-        );
+      const found = findFileByPath(
+        node.children,
+        normalizedTarget,
+        currentPath
+      );
 
       if (found) {
         return found;
@@ -221,21 +227,14 @@ function updateFileInTree(
 }
 
 // =====================================================
-// PREVIEW RESPONSE
-// =====================================================
-
-type PreviewResponse = {
-  success: boolean;
-  projectId: string;
-  previewUrl: string;
-  message?: string;
-};
-
-// =====================================================
 // MAIN EDITOR
 // =====================================================
 
 export function MainEditor() {
+  // ===================================================
+  // ZUSTAND
+  // ===================================================
+
   const selectedFile =
     useProjectState(
       (state) =>
@@ -248,10 +247,17 @@ export function MainEditor() {
         state.project
     );
 
+  // ===================================================
+  // LOCAL STATE
+  // ===================================================
+
   const [previewUrl, setPreviewUrl] =
     useState<string | null>(null);
 
   const [isRunning, setIsRunning] =
+    useState(false);
+
+  const [isSaving, setIsSaving] =
     useState(false);
 
   // ===================================================
@@ -347,7 +353,7 @@ export function MainEditor() {
 
         if (!result.updated) {
           console.warn(
-            "File not found:",
+            "⚠️ File not found:",
             filePath
           );
 
@@ -399,6 +405,222 @@ export function MainEditor() {
     );
 
   // ===================================================
+  // SAVE MUTATION
+  // ===================================================
+
+  const saveMutation =
+    useMutation({
+      mutationFn: ({
+        ownerId,
+        projectId,
+        files,
+      }: {
+        ownerId: string;
+        projectId: string;
+        files: FileNode[];
+      }) =>
+        SaveFile(
+          ownerId,
+          projectId,
+          files
+        ),
+
+      onMutate: () => {
+        setIsSaving(true);
+      },
+
+      onSuccess: () => {
+        console.log(
+          "💾 Files saved successfully"
+        );
+      },
+
+      onError: (error) => {
+        console.error(
+          "❌ Save failed:",
+          error
+        );
+
+        alert(
+          error instanceof Error
+            ? error.message
+            : "Failed to save files"
+        );
+      },
+
+      onSettled: () => {
+        setIsSaving(false);
+      },
+    });
+
+  // ===================================================
+  // SAVE PROJECT
+  //
+  // CTRL + S USES THIS
+  // ===================================================
+
+  const handleSave =
+    useCallback(() => {
+      const ownerId =
+        project?.ownerId;
+
+      const projectId =
+        project?.projectId;
+
+      if (
+        !ownerId ||
+        !projectId
+      ) {
+        console.warn(
+          "⚠️ Owner ID or Project ID missing"
+        );
+
+        return;
+      }
+
+      const state =
+        useProjectState.getState();
+
+      const files =
+        state.files as FileNode[];
+
+      if (
+        !files ||
+        files.length === 0
+      ) {
+        console.warn(
+          "⚠️ No project files to save"
+        );
+
+        return;
+      }
+
+      console.log(
+        "💾 Saving project:",
+        projectId
+      );
+
+      saveMutation.mutate({
+        ownerId,
+        projectId,
+        files,
+      });
+    }, [
+      project?.ownerId,
+      project?.projectId,
+      saveMutation,
+    ]);
+
+  // ===================================================
+  // PREVIEW MUTATION
+  //
+  // RUN BUTTON USES THIS
+  // ===================================================
+
+  const runMutation =
+    useMutation({
+      mutationFn: ({
+        projectId,
+        files,
+      }: {
+        projectId: string;
+        files: FileNode[];
+      }) =>
+        runPreview(
+          projectId,
+          files
+        ),
+
+      onMutate: () => {
+        setIsRunning(true);
+      },
+
+      onSuccess: (data) => {
+        console.log(
+          "🟢 Preview ready:",
+          data.previewUrl
+        );
+
+        setPreviewUrl(
+          data.previewUrl
+        );
+      },
+
+      onError: (error) => {
+        console.error(
+          "❌ Preview error:",
+          error
+        );
+
+        alert(
+          error instanceof Error
+            ? error.message
+            : "Preview failed"
+        );
+      },
+
+      onSettled: () => {
+        setIsRunning(false);
+      },
+    });
+
+  // ===================================================
+  // RUN PREVIEW
+  //
+  // IMPORTANT:
+  // This DOES NOT call SaveFile.
+  // ===================================================
+
+  const handleRun =
+    useCallback(() => {
+      const projectId =
+        project?.projectId;
+
+      if (!projectId) {
+        console.warn(
+          "⚠️ Project ID missing"
+        );
+
+        return;
+      }
+
+      const state =
+        useProjectState.getState();
+
+      const files =
+        state.files as FileNode[];
+
+      if (
+        !files ||
+        files.length === 0
+      ) {
+        console.warn(
+          "⚠️ No project files"
+        );
+
+        return;
+      }
+
+      console.log(
+        "🚀 Starting preview:",
+        projectId
+      );
+
+      console.log(
+        "📁 Sending files:",
+        files.length
+      );
+
+      runMutation.mutate({
+        projectId,
+        files,
+      });
+    }, [
+      project?.projectId,
+      runMutation,
+    ]);
+
+  // ===================================================
   // YJS CONNECTION
   // ===================================================
 
@@ -417,15 +639,25 @@ export function MainEditor() {
       return;
     }
 
+    console.log(
+      "🔌 Connecting YJS..."
+    );
+
     const ydoc =
       new Y.Doc();
 
     const room =
       `project:${projectId}`;
 
+    /*
+     * IMPORTANT:
+     *
+     * Render HTTPS endpoint
+     * becomes WSS for WebSocket.
+     */
     const provider =
       new WebsocketProvider(
-        "https://webweaver-m0is.onrender.com",
+        "wss://webweaver-m0is.onrender.com",
         room,
         ydoc,
         {
@@ -460,7 +692,7 @@ export function MainEditor() {
       status: string;
     }) => {
       console.log(
-        "YJS STATUS:",
+        "🌐 YJS STATUS:",
         status
       );
     };
@@ -473,6 +705,11 @@ export function MainEditor() {
     const syncHandler = (
       isSynced: boolean
     ) => {
+      console.log(
+        "🔄 YJS SYNC:",
+        isSynced
+      );
+
       if (!isSynced) {
         return;
       }
@@ -507,7 +744,7 @@ export function MainEditor() {
     const awarenessHandler =
       () => {
         console.log(
-          "Collaborators:",
+          "👥 Collaborators:",
           provider.awareness
             .getStates()
             .size
@@ -520,6 +757,11 @@ export function MainEditor() {
     );
 
     return () => {
+      console.log(
+        "🔴 Disconnecting YJS:",
+        room
+      );
+
       cleanupBinding();
 
       provider.off(
@@ -674,6 +916,11 @@ export function MainEditor() {
 
         bindingRef.current =
           binding;
+
+        console.log(
+          "🔗 Bound:",
+          normalizedPath
+        );
       },
       [
         cleanupBinding,
@@ -690,6 +937,10 @@ export function MainEditor() {
       editor,
       monaco
     ) => {
+      console.log(
+        "🟢 Monaco mounted"
+      );
+
       editorRef.current =
         editor;
 
@@ -708,15 +959,14 @@ export function MainEditor() {
         );
       }
 
-      // ===============================================
-      // CTRL + S
-      // ===============================================
+      // =================================================
+      // CTRL + S → SAVE ONLY
+      // =================================================
 
       editor.addAction({
-        id: "save-and-run",
+        id: "save-files",
 
-        label:
-          "Save and Run Preview",
+        label: "Save Files",
 
         keybindings: [
           monaco.KeyMod.CtrlCmd |
@@ -724,7 +974,7 @@ export function MainEditor() {
         ],
 
         run: () => {
-          handleRun();
+          handleSave();
         },
       });
     };
@@ -761,141 +1011,6 @@ export function MainEditor() {
     selectedFile?.path,
     bindFileToYjs,
   ]);
-
-  // ===================================================
-  // START VERCEL SANDBOX PREVIEW
-  // ===================================================
-
-  const runMutation =
-    useMutation({
-      mutationFn:
-        async ({
-          projectId,
-          files,
-        }: {
-          projectId: string;
-          files: FileNode[];
-        }) => {
-          const response =
-            await fetch(
-              "/api/preview",
-              {
-                method: "POST",
-
-                headers: {
-                  "Content-Type":
-                    "application/json",
-                },
-
-                body:
-                  JSON.stringify({
-                    projectId,
-                    files,
-                  }),
-              }
-            );
-
-          const data =
-            (await response.json()) as PreviewResponse;
-
-          if (
-            !response.ok ||
-            !data.success
-          ) {
-            throw new Error(
-              data.message ??
-                "Preview failed"
-            );
-          }
-
-          return data;
-        },
-
-      onMutate: () => {
-        setIsRunning(true);
-      },
-
-      onSuccess: (data) => {
-        console.log(
-          "🟢 Preview ready:",
-          data.previewUrl
-        );
-
-        setPreviewUrl(
-          data.previewUrl
-        );
-      },
-
-      onError: (error) => {
-        console.error(
-          "❌ Preview error:",
-          error
-        );
-
-        alert(
-          error instanceof Error
-            ? error.message
-            : "Preview failed"
-        );
-      },
-
-      onSettled: () => {
-        setIsRunning(false);
-      },
-    });
-
-  // ===================================================
-  // RUN PROJECT
-  // ===================================================
-
-  const handleRun =
-    useCallback(() => {
-      const projectId =
-        project?.projectId;
-
-      if (!projectId) {
-        console.warn(
-          "Project ID missing"
-        );
-
-        return;
-      }
-
-      const state =
-        useProjectState.getState();
-
-      const files =
-        state.files as FileNode[];
-
-      if (
-        !files ||
-        files.length === 0
-      ) {
-        console.warn(
-          "No project files"
-        );
-
-        return;
-      }
-
-      console.log(
-        "🚀 Starting preview:",
-        projectId
-      );
-
-      console.log(
-        "📁 Sending files:",
-        files.length
-      );
-
-      runMutation.mutate({
-        projectId,
-        files,
-      });
-    }, [
-      project?.projectId,
-      runMutation,
-    ]);
 
   // ===================================================
   // MONACO CONFIG
@@ -960,7 +1075,7 @@ export function MainEditor() {
   return (
     <div className="flex h-full w-full">
 
-      {/* =================================================
+      {/* ================================================
           EDITOR
       ================================================= */}
 
@@ -1002,9 +1117,26 @@ export function MainEditor() {
           }}
         />
 
-        {/* RUN BUTTON */}
+        {/* ==============================================
+            RUN BUTTON
+        =============================================== */}
 
-        <div className="absolute right-4 top-4 z-30">
+        <div className="absolute right-4 top-4 z-30 flex gap-2">
+
+          <button
+            type="button"
+            onClick={
+              handleSave
+            }
+            disabled={
+              isSaving
+            }
+            className="rounded bg-green-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving
+              ? "Saving..."
+              : "Save"}
+          </button>
 
           <button
             type="button"
@@ -1025,7 +1157,7 @@ export function MainEditor() {
 
       </div>
 
-      {/* =================================================
+      {/* ================================================
           PREVIEW
       ================================================= */}
 
