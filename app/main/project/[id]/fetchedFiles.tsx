@@ -2,13 +2,20 @@
 
 import { GetProjectFolder } from "@/ApiCalls/ProjectSetup/project";
 import { useProjectState } from "@/useStates/projectStates";
+
 import { useQuery } from "@tanstack/react-query";
+
 import {
   useCallback,
   useEffect,
   useState,
 } from "react";
+
 import { toast } from "sonner";
+
+// =====================================================
+// FILE TYPE
+// =====================================================
 
 export type FileNode = {
   name: string;
@@ -18,11 +25,19 @@ export type FileNode = {
   children?: FileNode[];
 };
 
+// =====================================================
+// FILE EXPLORER
+// =====================================================
+
 export default function FileExplorer({
   id,
 }: {
   id: string;
 }) {
+  // ===================================================
+  // ZUSTAND
+  // ===================================================
+
   const project = useProjectState(
     (state) => state.project
   );
@@ -35,27 +50,30 @@ export default function FileExplorer({
     (state) => state.setFiles
   );
 
-  const setSelectedFile = useProjectState(
-    (state) => state.setSelectedFile
-  );
+  const setSelectedFile =
+    useProjectState(
+      (state) => state.setSelectedFile
+    );
 
-  /*
-   * This stores the FULL path of the selected folder.
-   *
-   * null = root
-   *
-   * Examples:
-   *
-   * null
-   * app
-   * app/components
-   * app/dashboard
-   */
-  const [selectedFolderPath, setSelectedFolderPath] =
-    useState<string | null>(null);
+  // ===================================================
+  // SELECTED FOLDER
+  // ===================================================
+
+  const [
+    selectedFolderPath,
+    setSelectedFolderPath,
+  ] = useState<string | null>(null);
+
+  // ===================================================
+  // PROJECT ID
+  // ===================================================
 
   const pid =
     id ?? project?.projectId;
+
+  // ===================================================
+  // FETCH FILES
+  // ===================================================
 
   const {
     data,
@@ -79,21 +97,15 @@ export default function FileExplorer({
     ),
   });
 
-  /*
-   * =========================================================
-   * LOAD FILES
-   * =========================================================
-   */
+  // ===================================================
+  // LOAD FILES
+  // ===================================================
 
   useEffect(() => {
     if (!data?.files) {
       return;
     }
 
-    /*
-     * Normalize backend files so EVERY node has
-     * a unique full path.
-     */
     const normalizedFiles =
       normalizeTree(data.files);
 
@@ -103,11 +115,9 @@ export default function FileExplorer({
     setFiles,
   ]);
 
-  /*
-   * =========================================================
-   * ERROR
-   * =========================================================
-   */
+  // ===================================================
+  // ERROR
+  // ===================================================
 
   useEffect(() => {
     if (isError) {
@@ -117,11 +127,9 @@ export default function FileExplorer({
     }
   }, [isError]);
 
-  /*
-   * =========================================================
-   * FILE CLICK
-   * =========================================================
-   */
+  // ===================================================
+  // FILE CLICK
+  // ===================================================
 
   const handleFileClick =
     useCallback(
@@ -137,24 +145,8 @@ export default function FileExplorer({
           file.path
         );
 
-        /*
-         * IMPORTANT:
-         *
-         * Do NOT identify the file only by:
-         *
-         * file.name
-         *
-         * because:
-         *
-         * app/page.tsx
-         * dashboard/page.tsx
-         *
-         * both have name = "page.tsx".
-         *
-         * The path is the real identity.
-         */
         setSelectedFile({
-           name: file.name,
+          name: file.name,
           path: file.path,
           content:
             file.content ?? "",
@@ -164,11 +156,9 @@ export default function FileExplorer({
       [setSelectedFile]
     );
 
-  /*
-   * =========================================================
-   * FOLDER CLICK
-   * =========================================================
-   */
+  // ===================================================
+  // FOLDER CLICK
+  // ===================================================
 
   const handleFolderClick =
     useCallback(
@@ -180,11 +170,9 @@ export default function FileExplorer({
       []
     );
 
-  /*
-   * =========================================================
-   * CREATE FILE
-   * =========================================================
-   */
+  // ===================================================
+  // CREATE FILE
+  // ===================================================
 
   const handleCreateFile =
     useCallback(() => {
@@ -205,14 +193,6 @@ export default function FileExplorer({
         return;
       }
 
-      /*
-       * Prevent "/" inside a file name.
-       *
-       * A path should be created by selecting
-       * the folder, not by typing:
-       *
-       * app/page.tsx
-       */
       if (
         trimmedName.includes("/") ||
         trimmedName.includes("\\")
@@ -220,6 +200,7 @@ export default function FileExplorer({
         toast.error(
           "Enter only the file name"
         );
+
         return;
       }
 
@@ -231,19 +212,6 @@ export default function FileExplorer({
           ? `${parentPath}/${trimmedName}`
           : trimmedName;
 
-      /*
-       * Check by FULL PATH.
-       *
-       * This means:
-       *
-       * app/page.tsx
-       *
-       * and
-       *
-       * dashboard/page.tsx
-       *
-       * are completely different files.
-       */
       if (
         findNodeByPath(
           files,
@@ -253,6 +221,7 @@ export default function FileExplorer({
         toast.error(
           `"${newPath}" already exists`
         );
+
         return;
       }
 
@@ -274,14 +243,12 @@ export default function FileExplorer({
         toast.error(
           "Selected folder was not found"
         );
+
         return;
       }
 
       setFiles(updatedFiles);
 
-      /*
-       * Automatically select the new file.
-       */
       setSelectedFile({
         name: newFile.name,
         path: newFile.path,
@@ -299,11 +266,9 @@ export default function FileExplorer({
       setSelectedFile,
     ]);
 
-  /*
-   * =========================================================
-   * CREATE FOLDER
-   * =========================================================
-   */
+  // ===================================================
+  // CREATE FOLDER
+  // ===================================================
 
   const handleCreateFolder =
     useCallback(() => {
@@ -331,6 +296,7 @@ export default function FileExplorer({
         toast.error(
           "Enter only the folder name"
         );
+
         return;
       }
 
@@ -342,9 +308,6 @@ export default function FileExplorer({
           ? `${parentPath}/${trimmedName}`
           : trimmedName;
 
-      /*
-       * Check FULL PATH.
-       */
       if (
         findNodeByPath(
           files,
@@ -354,6 +317,7 @@ export default function FileExplorer({
         toast.error(
           `"${newPath}" already exists`
         );
+
         return;
       }
 
@@ -375,14 +339,12 @@ export default function FileExplorer({
         toast.error(
           "Selected folder was not found"
         );
+
         return;
       }
 
       setFiles(updatedFiles);
 
-      /*
-       * Select the newly created folder.
-       */
       setSelectedFolderPath(
         newPath
       );
@@ -396,112 +358,314 @@ export default function FileExplorer({
       setFiles,
     ]);
 
-  /*
-   * =========================================================
-   * LOADING
-   * =========================================================
-   */
-
-  if (isLoading) {
-    return (
-      <div className="p-3 text-sm text-muted-foreground">
-        Loading files...
-      </div>
-    );
-  }
-
-  /*
-   * =========================================================
-   * ERROR
-   * =========================================================
-   */
+  // ===================================================
+  // ERROR UI
+  // ===================================================
 
   if (isError) {
     return (
-      <div className="p-3 text-sm text-red-500">
-        Failed to load files.
+      <div className="flex h-full flex-col bg-[#0a0d14]">
+
+        <div className="flex h-10 items-center border-b border-white/[0.06] px-3">
+
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+            Explorer
+          </span>
+
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
+
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-500/10 bg-red-500/5">
+
+            <svg
+              className="h-5 w-5 text-red-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path
+                d="M12 9v4"
+                strokeLinecap="round"
+              />
+
+              <path
+                d="M12 17h.01"
+                strokeLinecap="round"
+                strokeWidth="2.5"
+              />
+
+              <path
+                d="M10.3 4.4 2.9 17a2 2 0 0 0 1.73 3h14.74a2 2 0 0 0 1.73-3L13.7 4.4a2 2 0 0 0-3.4 0Z"
+                strokeLinejoin="round"
+              />
+            </svg>
+
+          </div>
+
+          <div>
+
+            <p className="text-xs font-medium text-gray-300">
+              Failed to load files
+            </p>
+
+            <p className="mt-1 text-[10px] text-gray-600">
+              Unable to fetch the project
+              workspace.
+            </p>
+
+          </div>
+
+        </div>
       </div>
     );
   }
 
-  /*
-   * =========================================================
-   * UI
-   * =========================================================
-   */
+  // ===================================================
+  // UI
+  // ===================================================
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden bg-[#0a0d14] text-white">
 
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 py-2">
+      {/* =================================================
+          EXPLORER HEADER
+      ================================================= */}
 
-        <span className="text-sm font-medium">
-          Explorer
-        </span>
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] bg-[#0d111a] px-3">
+
+        {/* BRAND */}
+
+        <div className="flex items-center gap-2.5">
+
+          <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.03]">
+
+            <img
+              src="/logo.png"
+              alt="WebWeaver"
+              className="h-5 w-5 object-contain"
+            />
+
+          </div>
+
+          <div className="flex flex-col">
+
+            <span className="text-xs font-semibold tracking-tight text-gray-200">
+              WebWeaver
+            </span>
+
+            <span className="text-[9px] uppercase tracking-widest text-gray-600">
+              Explorer
+            </span>
+
+          </div>
+
+        </div>
+
+        {/* ACTIONS */}
 
         <div className="flex items-center gap-1">
 
-          {/* New File */}
+          {/* NEW FILE */}
+
           <button
             type="button"
-            onClick={handleCreateFile}
+            onClick={
+              handleCreateFile
+            }
             title={
               selectedFolderPath
                 ? `New file in ${selectedFolderPath}`
                 : "New file in root"
             }
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent"
+            className="group flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-gray-500 transition-all hover:border-white/[0.07] hover:bg-white/[0.05] hover:text-gray-200"
           >
-            📄
+
+            <svg
+              className="h-3.5 w-3.5 transition-transform group-hover:scale-110"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+                strokeLinejoin="round"
+              />
+
+              <path
+                d="M14 2v6h6"
+                strokeLinejoin="round"
+              />
+
+              <path
+                d="M12 12v5M9.5 14.5h5"
+                strokeLinecap="round"
+              />
+            </svg>
+
           </button>
 
-          {/* New Folder */}
+          {/* NEW FOLDER */}
+
           <button
             type="button"
-            onClick={handleCreateFolder}
+            onClick={
+              handleCreateFolder
+            }
             title={
               selectedFolderPath
                 ? `New folder in ${selectedFolderPath}`
                 : "New folder in root"
             }
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent"
+            className="group flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-gray-500 transition-all hover:border-white/[0.07] hover:bg-white/[0.05] hover:text-gray-200"
           >
-            📁
+
+            <svg
+              className="h-3.5 w-3.5 transition-transform group-hover:scale-110"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <path
+                d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+                strokeLinejoin="round"
+              />
+
+              <path
+                d="M12 10v5M9.5 12.5h5"
+                strokeLinecap="round"
+              />
+            </svg>
+
           </button>
 
         </div>
+
       </div>
 
-      {/* Current folder */}
-      <div className="border-b px-3 py-1.5 text-[11px] text-muted-foreground">
-        {selectedFolderPath
-          ? `Creating in: ${selectedFolderPath}`
-          : "Creating in: root"}
+      {/* =================================================
+          CURRENT FOLDER
+      ================================================= */}
+
+      <div className="flex h-8 shrink-0 items-center border-b border-white/[0.05] bg-[#0b0f17] px-3">
+
+        <div className="flex min-w-0 items-center gap-1.5">
+
+          <svg
+            className="h-3 w-3 shrink-0 text-gray-600"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+          >
+            <path
+              d="M3 7a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+              strokeLinejoin="round"
+            />
+          </svg>
+
+          <span className="truncate text-[10px] text-gray-600">
+            {selectedFolderPath
+              ? `Creating in: ${selectedFolderPath}`
+              : "Creating in: root"}
+          </span>
+
+        </div>
+
       </div>
 
-      {/* Tree */}
-      <div className="flex-1 overflow-auto p-2">
-        <FileTree
-          nodes={files ?? []}
-          onFileClick={
-            handleFileClick
-          }
-          onFolderClick={
-            handleFolderClick
-          }
-        />
+      {/* =================================================
+          TREE AREA
+      ================================================= */}
+
+      {isLoading ? (
+        <div className="flex flex-1 flex-col overflow-hidden">
+
+          {/* Loading skeleton */}
+
+          <div className="space-y-2 p-3">
+
+            {[1, 2, 3, 4, 5, 6].map(
+              (item) => (
+                <div
+                  key={item}
+                  className="flex items-center gap-2"
+                >
+
+                  <div className="h-3.5 w-3.5 animate-pulse rounded bg-white/[0.05]" />
+
+                  <div
+                    className="h-3 animate-pulse rounded bg-white/[0.05]"
+                    style={{
+                      width: `${45 + item * 9}px`,
+                    }}
+                  />
+
+                </div>
+              )
+            )}
+
+          </div>
+
+        </div>
+      ) : (
+        <div className="relative flex-1 overflow-auto bg-[#0a0d14] p-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/[0.08]">
+
+          {/* Subtle background */}
+
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.015]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,.8) 1px, transparent 1px)",
+              backgroundSize:
+                "100% 24px",
+            }}
+          />
+
+          <div className="relative">
+
+            <FileTree
+              nodes={files ?? []}
+              onFileClick={
+                handleFileClick
+              }
+              onFolderClick={
+                handleFolderClick
+              }
+            />
+
+          </div>
+
+        </div>
+      )}
+
+      {/* =================================================
+          FOOTER
+      ================================================= */}
+
+      <div className="flex h-6 shrink-0 items-center justify-between border-t border-white/[0.05] bg-[#0b0f17] px-3">
+
+        <span className="text-[9px] text-gray-700">
+          {files?.length ?? 0} items
+        </span>
+
+        <span className="text-[9px] text-gray-700">
+          Workspace
+        </span>
+
       </div>
-      
+
     </div>
   );
 }
 
-/*
- * =========================================================
- * FILE TREE
- * =========================================================
- */
+// =====================================================
+// FILE TREE
+// =====================================================
 
 function FileTree({
   nodes,
@@ -509,15 +673,18 @@ function FileTree({
   onFolderClick,
 }: {
   nodes: FileNode[];
+
   onFileClick: (
     file: FileNode
   ) => void;
+
   onFolderClick: (
     path: string
   ) => void;
 }) {
   return (
-    <div>
+    <div className="space-y-0.5">
+
       {nodes.map((node) => (
         <TreeNode
           key={node.path}
@@ -530,15 +697,14 @@ function FileTree({
           }
         />
       ))}
+
     </div>
   );
 }
 
-/*
- * =========================================================
- * TREE NODE
- * =========================================================
- */
+// =====================================================
+// TREE NODE
+// =====================================================
 
 function TreeNode({
   node,
@@ -546,9 +712,11 @@ function TreeNode({
   onFolderClick,
 }: {
   node: FileNode;
+
   onFileClick: (
     file: FileNode
   ) => void;
+
   onFolderClick: (
     path: string
   ) => void;
@@ -558,11 +726,9 @@ function TreeNode({
     setIsOpen,
   ] = useState(false);
 
-  /*
-   * =======================================================
-   * FOLDER
-   * =======================================================
-   */
+  // ===================================================
+  // FOLDER
+  // ===================================================
 
   if (
     node.type === "folder"
@@ -581,24 +747,74 @@ function TreeNode({
               node.path
             );
           }}
-          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-accent"
+          className="group flex cursor-pointer items-center gap-1 rounded-md px-2 py-1.5 text-xs text-gray-400 transition-all duration-150 hover:bg-white/[0.05] hover:text-gray-200"
         >
-          <span>
-            {isOpen
-              ? "📂"
-              : "📁"}
-          </span>
 
-          <span>
+          {/* CHEVRON */}
+
+          <svg
+            className={`h-3 w-3 shrink-0 text-gray-600 transition-transform duration-150 ${
+              isOpen
+                ? "rotate-90"
+                : ""
+            }`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              d="m9 18 6-6-6-6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+
+          {/* FOLDER ICON */}
+
+          {isOpen ? (
+            <svg
+              className="h-3.5 w-3.5 shrink-0 text-amber-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <path
+                d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <svg
+              className="h-3.5 w-3.5 shrink-0 text-amber-400/80"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <path
+                d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+
+          {/* NAME */}
+
+          <span className="min-w-0 truncate">
             {node.name}
           </span>
+
         </div>
+
+        {/* CHILDREN */}
 
         {isOpen &&
           node.children &&
           node.children.length >
             0 && (
-            <div className="ml-4 border-l pl-2">
+            <div className="ml-[9px] border-l border-white/[0.06] pl-2">
 
               <FileTree
                 nodes={
@@ -619,11 +835,9 @@ function TreeNode({
     );
   }
 
-  /*
-   * =======================================================
-   * FILE
-   * =======================================================
-   */
+  // ===================================================
+  // FILE
+  // ===================================================
 
   return (
     <div
@@ -631,45 +845,42 @@ function TreeNode({
         onFileClick(node)
       }
       title={node.path}
-      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-accent hover:text-blue-500"
+      className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-gray-500 transition-all duration-150 hover:bg-blue-500/[0.08] hover:text-gray-200"
     >
-      <span>📄</span>
 
-      <span>
+      {/* FILE ICON */}
+
+      <svg
+        className="h-3.5 w-3.5 shrink-0 text-blue-400/70 transition-colors group-hover:text-blue-400"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      >
+        <path
+          d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+          strokeLinejoin="round"
+        />
+
+        <path
+          d="M14 2v6h6"
+          strokeLinejoin="round"
+        />
+      </svg>
+
+      {/* NAME */}
+
+      <span className="min-w-0 truncate">
         {node.name}
       </span>
+
     </div>
   );
 }
 
-/*
- * =========================================================
- * NORMALIZE TREE
- * =========================================================
- *
- * Converts backend data like:
- *
- * [
- *   {
- *     name: "app",
- *     type: "folder",
- *     children: [
- *       {
- *         name: "page.tsx",
- *         type: "file"
- *       }
- *     ]
- *   }
- * ]
- *
- * into:
- *
- * app
- *   path: "app"
- *
- * app/page.tsx
- *   path: "app/page.tsx"
- */
+// =====================================================
+// NORMALIZE TREE
+// =====================================================
 
 function normalizeTree(
   nodes: FileNode[],
@@ -706,11 +917,9 @@ function normalizeTree(
   );
 }
 
-/*
- * =========================================================
- * FIND NODE BY FULL PATH
- * =========================================================
- */
+// =====================================================
+// FIND NODE BY FULL PATH
+// =====================================================
 
 function findNodeByPath(
   nodes: FileNode[],
@@ -742,32 +951,20 @@ function findNodeByPath(
   return null;
 }
 
-/*
- * =========================================================
- * INSERT NODE
- * =========================================================
- *
- * folderPath = null
- * -> insert at root
- *
- * folderPath = "app"
- * -> insert into app
- *
- * folderPath = "app/components"
- * -> insert into app/components
- */
+// =====================================================
+// INSERT NODE
+// =====================================================
 
 function insertNode(
   nodes: FileNode[],
   folderPath: string | null,
   newNode: FileNode
 ): FileNode[] | null {
+  // ===================================================
+  // ROOT
+  // ===================================================
 
-  /*
-   * ROOT
-   */
   if (!folderPath) {
-
     if (
       nodes.some(
         (node) =>
@@ -784,19 +981,20 @@ function insertNode(
     ];
   }
 
-  /*
-   * Find target folder by
-   * FULL PATH.
-   */
+  // ===================================================
+  // FIND TARGET FOLDER
+  // ===================================================
+
   let foundFolder =
     false;
 
   const updated =
     nodes.map((node) => {
 
-      /*
-       * This is the target folder.
-       */
+      // =================================================
+      // TARGET FOLDER
+      // =================================================
+
       if (
         node.type === "folder" &&
         node.path === folderPath
@@ -806,10 +1004,6 @@ function insertNode(
         const children =
           node.children ?? [];
 
-        /*
-         * Duplicate check is
-         * ONLY inside this folder.
-         */
         if (
           children.some(
             (child) =>
@@ -830,10 +1024,10 @@ function insertNode(
         };
       }
 
-      /*
-       * Recursively search
-       * nested folders.
-       */
+      // =================================================
+      // RECURSIVE SEARCH
+      // =================================================
+
       if (
         node.type === "folder" &&
         node.children
@@ -850,6 +1044,7 @@ function insertNode(
 
           return {
             ...node,
+
             children:
               childResult,
           };
@@ -858,6 +1053,10 @@ function insertNode(
 
       return node;
     });
+
+  // ===================================================
+  // FOLDER NOT FOUND
+  // ===================================================
 
   if (!foundFolder) {
     return null;

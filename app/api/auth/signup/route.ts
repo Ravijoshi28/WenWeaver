@@ -1,10 +1,32 @@
 import { prisma } from "@/lib/prisma";
+import { authRateLimit } from "@/lib/rate-limiter";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 
 const SALT_ROUNDS = 10;
 
 export async function POST(req: NextRequest) {
+
+    const forwardedFor = req.headers.get("x-forwarded-for");
+
+    const ip =
+      forwardedFor?.split(",")[0]?.trim() ||
+      req.headers.get("x-real-ip") ||
+      "unknown";
+
+      const rateLimit=await authRateLimit.limit(
+        `signup:ip:${ip}`
+      )
+
+      if (!rateLimit.success) {
+    return NextResponse.json(
+      {
+        error:
+          "Too many signIn requests. Please try again later.",
+      }
+    );
+  }
+
   try {
     const { name, email, password } = await req.json();
 

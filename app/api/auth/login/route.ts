@@ -1,5 +1,6 @@
 import { AccessToken, RefreshToken } from "@/lib/cookieGenerator";
 import { prisma } from "@/lib/prisma";
+import { authRateLimit } from "@/lib/rate-limiter";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -7,17 +8,46 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const {  email, password } = await req.json();
-    console.log(email,password)
+   
     if ( !email || !password) {
       return NextResponse.json(
         { message: "All fields are required" },
         { status: 400 }
       );
     }
+   const forwardedFor = req.headers.get("x-forwarded-for");
+
+const ip =
+  forwardedFor?.split(",")[0]?.trim() ||
+  req.headers.get("x-real-ip") ||
+  "unknown";
+
+  const normalizedEmail =
+  email.trim().toLowerCase()
+
+    const emailLimit =
+  await authRateLimit.limit(
+    `login:email:${normalizedEmail}`
+  );
+
+const ipLimit =
+  await authRateLimit.limit(
+    `login:ip:${ip}`
+  );
+
+    if (!emailLimit.success || !ipLimit.success) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    }
+    
+  );
+}
 
     const user=await prisma.user.findUnique({
         where:{
-            email:email
+            email:normalizedEmail
         }
     })
 

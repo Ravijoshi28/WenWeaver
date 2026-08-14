@@ -9,6 +9,7 @@ import { uploadProjectToSupabase } from "@/lib/uploadProject";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
+import { createProjectRateLimit } from "@/lib/rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,6 +46,31 @@ export async function POST(req: NextRequest) {
     }
 
     console.log("USER ID:", user.id);
+    const rateLimit=await createProjectRateLimit.limit(
+      `createProject:${user.id}`
+    )
+
+    if (!rateLimit.success) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    },
+    {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit":
+          String(rateLimit.limit),
+
+        "X-RateLimit-Remaining":
+          String(rateLimit.remaining),
+
+        "X-RateLimit-Reset":
+          String(rateLimit.reset),
+      },
+    }
+  );
+}
 
     // -----------------------------------------
     // REQUEST BODY

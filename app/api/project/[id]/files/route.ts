@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
+import { generalRateLimit } from "@/lib/rate-limiter";
 
 type FileNode = {
   name: string;
@@ -226,6 +227,32 @@ export async function POST(
         { status: 401 }
       );
     }
+
+    const rateLimit=await generalRateLimit.limit(
+      `getProjectFiles:${user.id}`
+    )
+
+    if (!rateLimit.success) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    },
+    {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit":
+          String(rateLimit.limit),
+
+        "X-RateLimit-Remaining":
+          String(rateLimit.remaining),
+
+        "X-RateLimit-Reset":
+          String(rateLimit.reset),
+      },
+    }
+  );
+}
 
     /* -----------------------------------------
        PROJECT ID

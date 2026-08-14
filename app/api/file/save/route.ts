@@ -5,6 +5,9 @@ import path from "path";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase";
+import { VerifyAccessToken } from "@/lib/verify";
+import { cookies } from "next/headers";
+import { saveRateLimit } from "@/lib/rate-limiter";
 
 // =========================================================
 // TYPES
@@ -569,6 +572,61 @@ export async function POST(
   req: NextRequest
 ) {
   try {
+
+     const cookieStore = await cookies();
+    
+        const token = cookieStore.get("accessToken")?.value;
+    
+        if (!token) {
+          return NextResponse.json(
+            {
+              message: "Not authorised",
+            },
+            {
+              status: 401,
+            }
+          );
+        }
+    
+        const user = VerifyAccessToken(token);
+    
+        if (!user) {
+          return NextResponse.json(
+            {
+              message: "Not authorised",
+            },
+            {
+              status: 401,
+            }
+          );
+        }
+
+        const rateLimit=await saveRateLimit.limit(
+          `save:user:${user.id}`
+        );
+
+        if (!rateLimit.success) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    },
+    {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit":
+          String(rateLimit.limit),
+
+        "X-RateLimit-Remaining":
+          String(rateLimit.remaining),
+
+        "X-RateLimit-Reset":
+          String(rateLimit.reset),
+      },
+    });
+        }
+
+
     const body =
       await req.json();
 

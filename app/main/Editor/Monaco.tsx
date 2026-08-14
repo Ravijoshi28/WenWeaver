@@ -44,9 +44,7 @@ export type FileNode = {
 // NORMALIZE PATH
 // =====================================================
 
-function normalizePath(
-  value?: string
-): string {
+function normalizePath(value?: string): string {
   if (!value) return "";
 
   return value
@@ -84,11 +82,10 @@ function findFileByPath(
     normalizePath(targetPath);
 
   for (const node of nodes) {
-    const currentPath =
-      getNodePath(
-        node,
-        parentPath
-      );
+    const currentPath = getNodePath(
+      node,
+      parentPath
+    );
 
     if (
       node.type === "file" &&
@@ -105,12 +102,11 @@ function findFileByPath(
       node.type === "folder" &&
       Array.isArray(node.children)
     ) {
-      const found =
-        findFileByPath(
-          node.children,
-          normalizedTarget,
-          currentPath
-        );
+      const found = findFileByPath(
+        node.children,
+        normalizedTarget,
+        currentPath
+      );
 
       if (found) {
         return found;
@@ -132,8 +128,7 @@ function getLanguageFromFileName(
     return "typescriptreact";
   }
 
-  const name =
-    filename.toLowerCase();
+  const name = filename.toLowerCase();
 
   if (name.endsWith(".tsx")) {
     return "typescriptreact";
@@ -196,16 +191,12 @@ function updateFileInTree(
     parentPath = ""
   ): FileNode[] {
     return nodes.map((node) => {
-      const currentPath =
-        getNodePath(
-          node,
-          parentPath
-        );
+      const currentPath = getNodePath(
+        node,
+        parentPath
+      );
 
-      // -----------------------------------------------
       // FILE
-      // -----------------------------------------------
-
       if (
         node.type === "file" &&
         normalizePath(currentPath) ===
@@ -215,67 +206,38 @@ function updateFileInTree(
 
         return {
           ...node,
-
           path: currentPath,
-
           content,
         };
       }
 
-      // -----------------------------------------------
       // FOLDER
-      // -----------------------------------------------
-
       if (
         node.type === "folder" &&
         Array.isArray(node.children)
       ) {
         return {
           ...node,
-
           path: currentPath,
-
-          children:
-            updateRecursive(
-              node.children,
-              currentPath
-            ),
+          children: updateRecursive(
+            node.children,
+            currentPath
+          ),
         };
       }
 
-      // -----------------------------------------------
-      // OTHER
-      // -----------------------------------------------
-
       return {
         ...node,
-
         path: currentPath,
       };
     });
   }
 
   return {
-    files:
-      updateRecursive(files),
-
+    files: updateRecursive(files),
     updated,
   };
 }
-
-// =====================================================
-// PREVIEW RESPONSE
-// =====================================================
-
-type PreviewResponse = {
-  success: boolean;
-
-  projectId: string;
-
-  previewUrl: string;
-
-  message?: string;
-};
 
 // =====================================================
 // MAIN EDITOR
@@ -286,17 +248,13 @@ export function MainEditor() {
   // ZUSTAND
   // ===================================================
 
-  const selectedFile =
-    useProjectState(
-      (state) =>
-        state.selectedFile
-    );
+  const selectedFile = useProjectState(
+    (state) => state.selectedFile
+  );
 
-  const project =
-    useProjectState(
-      (state) =>
-        state.project
-    );
+  const project = useProjectState(
+    (state) => state.project
+  );
 
   // ===================================================
   // LOCAL STATE
@@ -305,9 +263,7 @@ export function MainEditor() {
   const [
     previewUrl,
     setPreviewUrl,
-  ] = useState<string | null>(
-    null
-  );
+  ] = useState<string | null>(null);
 
   const [
     isRunning,
@@ -324,9 +280,9 @@ export function MainEditor() {
   // ===================================================
 
   const editorRef =
-    useRef<
-      Monaco.editor.IStandaloneCodeEditor | null
-    >(null);
+    useRef<Monaco.editor.IStandaloneCodeEditor | null>(
+      null
+    );
 
   // ===================================================
   // YJS REFS
@@ -336,14 +292,10 @@ export function MainEditor() {
     useRef<Y.Doc | null>(null);
 
   const providerRef =
-    useRef<WebsocketProvider | null>(
-      null
-    );
+    useRef<WebsocketProvider | null>(null);
 
   const bindingRef =
-    useRef<MonacoBinding | null>(
-      null
-    );
+    useRef<MonacoBinding | null>(null);
 
   const currentYTextRef =
     useRef<Y.Text | null>(null);
@@ -352,7 +304,7 @@ export function MainEditor() {
     useRef(false);
 
   // ===================================================
-  // YJS OBSERVER REF
+  // YJS OBSERVER
   // ===================================================
 
   const ytextObserverRef =
@@ -370,9 +322,7 @@ export function MainEditor() {
   // ===================================================
 
   const editorChangeListenerRef =
-    useRef<Monaco.IDisposable | null>(
-      null
-    );
+    useRef<Monaco.IDisposable | null>(null);
 
   // ===================================================
   // CLEANUP YJS BINDING
@@ -384,46 +334,24 @@ export function MainEditor() {
         "🧹 Cleaning YJS binding"
       );
 
-      // -----------------------------------------------
-      // YJS OBSERVER
-      // -----------------------------------------------
-
-      if (
-        ytextObserverRef.current
-      ) {
+      if (ytextObserverRef.current) {
         const {
           ytext,
           observer,
-        } =
-          ytextObserverRef.current;
+        } = ytextObserverRef.current;
 
-        ytext.unobserve(
-          observer
-        );
+        ytext.unobserve(observer);
 
-        ytextObserverRef.current =
-          null;
+        ytextObserverRef.current = null;
       }
 
-      // -----------------------------------------------
-      // MONACO BINDING
-      // -----------------------------------------------
-
-      if (
-        bindingRef.current
-      ) {
+      if (bindingRef.current) {
         bindingRef.current.destroy();
 
-        bindingRef.current =
-          null;
+        bindingRef.current = null;
       }
 
-      // -----------------------------------------------
-      // CURRENT YTEXT
-      // -----------------------------------------------
-
-      currentYTextRef.current =
-        null;
+      currentYTextRef.current = null;
     }, []);
 
   // ===================================================
@@ -439,17 +367,13 @@ export function MainEditor() {
         const normalizedFilePath =
           normalizePath(filePath);
 
-        if (
-          !normalizedFilePath
-        ) {
+        if (!normalizedFilePath) {
           console.warn(
             "⚠️ Cannot update file without path"
           );
 
-          return (
-            useProjectState.getState()
-              .files as FileNode[]
-          );
+          return useProjectState.getState()
+            .files as FileNode[];
         }
 
         const state =
@@ -458,20 +382,12 @@ export function MainEditor() {
         const files =
           state.files as FileNode[];
 
-        // ---------------------------------------------
-        // UPDATE BY FULL PATH
-        // ---------------------------------------------
-
         const result =
           updateFileInTree(
             files,
             normalizedFilePath,
             content
           );
-
-        // ---------------------------------------------
-        // FILE NOT FOUND
-        // ---------------------------------------------
 
         if (!result.updated) {
           console.warn(
@@ -482,10 +398,6 @@ export function MainEditor() {
           return files;
         }
 
-        // ---------------------------------------------
-        // CURRENT SELECTED FILE
-        // ---------------------------------------------
-
         const selected =
           state.selectedFile;
 
@@ -495,13 +407,8 @@ export function MainEditor() {
               selected?.name
           );
 
-        // ---------------------------------------------
-        // UPDATE ZUSTAND
-        // ---------------------------------------------
-
         useProjectState.setState({
-          files:
-            result.files,
+          files: result.files,
 
           selectedFile:
             selectedPath ===
@@ -545,10 +452,6 @@ export function MainEditor() {
       (
         editor: Monaco.editor.IStandaloneCodeEditor
       ) => {
-        // ---------------------------------------------
-        // REMOVE OLD LISTENER
-        // ---------------------------------------------
-
         if (
           editorChangeListenerRef.current
         ) {
@@ -558,70 +461,51 @@ export function MainEditor() {
             null;
         }
 
-        // ---------------------------------------------
-        // CREATE NEW LISTENER
-        // ---------------------------------------------
-
         editorChangeListenerRef.current =
-          editor.onDidChangeModelContent(
-            () => {
-              const model =
-                editor.getModel();
+          editor.onDidChangeModelContent(() => {
+            const model =
+              editor.getModel();
 
-              if (!model) {
-                console.warn(
-                  "⚠️ Monaco model missing"
-                );
-
-                return;
-              }
-
-              // Monaco URI path can begin with /
-              const modelPath =
-                normalizePath(
-                  model.uri.path
-                );
-
-              if (!modelPath) {
-                console.warn(
-                  "⚠️ Monaco model has no path"
-                );
-
-                return;
-              }
-
-              const content =
-                model.getValue();
-
-              console.log(
-                "📝 Monaco changed:",
-                modelPath
+            if (!model) {
+              console.warn(
+                "⚠️ Monaco model missing"
               );
 
-              console.log(
-                "📏 Content length:",
-                content.length
-              );
-
-              // -----------------------------------------
-              // IMPORTANT:
-              // MONACO → ZUSTAND
-              // -----------------------------------------
-
-              updateFileInStore(
-                modelPath,
-                content
-              );
+              return;
             }
-          );
+
+            const modelPath =
+              normalizePath(
+                model.uri.path
+              );
+
+            if (!modelPath) {
+              console.warn(
+                "⚠️ Monaco model has no path"
+              );
+
+              return;
+            }
+
+            const content =
+              model.getValue();
+
+            console.log(
+              "📝 Monaco changed:",
+              modelPath
+            );
+
+            updateFileInStore(
+              modelPath,
+              content
+            );
+          });
 
         console.log(
           "👂 Monaco change listener attached"
         );
       },
-      [
-        updateFileInStore,
-      ]
+      [updateFileInStore]
     );
 
   // ===================================================
@@ -636,9 +520,7 @@ export function MainEditor() {
         files,
       }: {
         ownerId: string;
-
         projectId: string;
-
         files: FileNode[];
       }) => {
         console.log(
@@ -666,18 +548,14 @@ export function MainEditor() {
         setIsSaving(true);
       },
 
-      onSuccess: (
-        data
-      ) => {
+      onSuccess: (data) => {
         console.log(
           "✅ Files saved successfully:",
           data
         );
       },
 
-      onError: (
-        error
-      ) => {
+      onError: (error) => {
         console.error(
           "❌ Save failed:",
           error
@@ -697,8 +575,6 @@ export function MainEditor() {
 
   // ===================================================
   // SAVE PROJECT
-  //
-  // CTRL + S USES THIS
   // ===================================================
 
   const handleSave =
@@ -709,14 +585,7 @@ export function MainEditor() {
       const projectId =
         project?.projectId;
 
-      // -----------------------------------------------
-      // VALIDATE PROJECT
-      // -----------------------------------------------
-
-      if (
-        !ownerId ||
-        !projectId
-      ) {
+      if (!ownerId || !projectId) {
         console.warn(
           "⚠️ Owner ID or Project ID missing",
           {
@@ -728,20 +597,11 @@ export function MainEditor() {
         return;
       }
 
-      // -----------------------------------------------
-      // ALWAYS GET LATEST ZUSTAND STATE
-      // -----------------------------------------------
-
       const state =
         useProjectState.getState();
 
       const files =
         state.files as FileNode[];
-        console.log(files);
-
-      // -----------------------------------------------
-      // VALIDATE FILES
-      // -----------------------------------------------
 
       if (
         !Array.isArray(files) ||
@@ -759,20 +619,9 @@ export function MainEditor() {
         projectId
       );
 
-      console.log(
-        "📁 Saving file nodes:",
-        files.length
-      );
-
-      // -----------------------------------------------
-      // SAVE
-      // -----------------------------------------------
-      console.log(files);
       saveMutation.mutate({
         ownerId,
-
         projectId,
-
         files,
       });
     }, [
@@ -783,8 +632,6 @@ export function MainEditor() {
 
   // ===================================================
   // PREVIEW MUTATION
-  //
-  // RUN BUTTON USES THIS
   // ===================================================
 
   const runMutation =
@@ -794,17 +641,11 @@ export function MainEditor() {
         files,
       }: {
         projectId: string;
-
         files: FileNode[];
       }) => {
         console.log(
           "🚀 Calling runPreview:",
           projectId
-        );
-
-        console.log(
-          "📁 Preview files:",
-          files.length
         );
 
         return runPreview(
@@ -821,9 +662,7 @@ export function MainEditor() {
         setIsRunning(true);
       },
 
-      onSuccess: (
-        data
-      ) => {
+      onSuccess: (data) => {
         console.log(
           "🟢 Preview ready:",
           data.previewUrl
@@ -834,9 +673,7 @@ export function MainEditor() {
         );
       },
 
-      onError: (
-        error
-      ) => {
+      onError: (error) => {
         console.error(
           "❌ Preview error:",
           error
@@ -860,9 +697,6 @@ export function MainEditor() {
 
   // ===================================================
   // RUN PREVIEW
-  //
-  // IMPORTANT:
-  // DOES NOT SAVE TO SUPABASE
   // ===================================================
 
   const handleRun =
@@ -878,19 +712,11 @@ export function MainEditor() {
         return;
       }
 
-      // -----------------------------------------------
-      // GET ABSOLUTELY LATEST ZUSTAND STATE
-      // -----------------------------------------------
-
       const state =
         useProjectState.getState();
 
       const files =
         state.files as FileNode[];
-
-      // -----------------------------------------------
-      // VALIDATE
-      // -----------------------------------------------
 
       if (
         !Array.isArray(files) ||
@@ -908,18 +734,8 @@ export function MainEditor() {
         projectId
       );
 
-      console.log(
-        "📁 Sending current Zustand files:",
-        files.length
-      );
-
-      // -----------------------------------------------
-      // PREVIEW ONLY
-      // -----------------------------------------------
-
       runMutation.mutate({
         projectId,
-
         files,
       });
     }, [
@@ -936,16 +752,8 @@ export function MainEditor() {
       project?.projectId;
 
     if (!projectId) {
-      console.log(
-        "⏳ Waiting for project ID..."
-      );
-
       return;
     }
-
-    // -----------------------------------------------
-    // PREVENT DUPLICATE CONNECTION
-    // -----------------------------------------------
 
     if (
       ydocRef.current &&
@@ -958,25 +766,10 @@ export function MainEditor() {
       "🔌 Connecting YJS..."
     );
 
-    console.log(
-      "🆔 Project:",
-      projectId
-    );
-
-    const ydoc =
-      new Y.Doc();
+    const ydoc = new Y.Doc();
 
     const room =
       `project:${projectId}`;
-
-    console.log(
-      "🚪 YJS room:",
-      room
-    );
-
-    // -----------------------------------------------
-    // RENDER YJS SERVER
-    // -----------------------------------------------
 
     const provider =
       new WebsocketProvider(
@@ -988,15 +781,10 @@ export function MainEditor() {
         }
       );
 
-    ydocRef.current =
-      ydoc;
+    ydocRef.current = ydoc;
 
     providerRef.current =
       provider;
-
-    // -----------------------------------------------
-    // AWARENESS
-    // -----------------------------------------------
 
     provider.awareness.setLocalStateField(
       "user",
@@ -1012,10 +800,6 @@ export function MainEditor() {
           "#3b82f6",
       }
     );
-
-    // -----------------------------------------------
-    // STATUS
-    // -----------------------------------------------
 
     const statusHandler = ({
       status,
@@ -1033,10 +817,6 @@ export function MainEditor() {
       statusHandler
     );
 
-    // -----------------------------------------------
-    // SYNC
-    // -----------------------------------------------
-
     const syncHandler = (
       isSynced: boolean
     ) => {
@@ -1049,8 +829,7 @@ export function MainEditor() {
         return;
       }
 
-      syncedRef.current =
-        true;
+      syncedRef.current = true;
 
       const editor =
         editorRef.current;
@@ -1059,11 +838,6 @@ export function MainEditor() {
         useProjectState
           .getState()
           .selectedFile?.path;
-
-      console.log(
-        "📂 Synced selected path:",
-        path
-      );
 
       if (
         editor &&
@@ -1081,10 +855,6 @@ export function MainEditor() {
       syncHandler
     );
 
-    // -----------------------------------------------
-    // AWARENESS
-    // -----------------------------------------------
-
     const awarenessHandler =
       () => {
         console.log(
@@ -1100,10 +870,6 @@ export function MainEditor() {
       awarenessHandler
     );
 
-    // -----------------------------------------------
-    // CLEANUP
-    // -----------------------------------------------
-
     return () => {
       console.log(
         "🔴 Disconnecting YJS:",
@@ -1112,7 +878,6 @@ export function MainEditor() {
 
       cleanupBinding();
 
-      // Monaco listener
       if (
         editorChangeListenerRef.current
       ) {
@@ -1171,10 +936,6 @@ export function MainEditor() {
         const provider =
           providerRef.current;
 
-        // ---------------------------------------------
-        // VALIDATE YJS
-        // ---------------------------------------------
-
         if (
           !ydoc ||
           !provider
@@ -1186,19 +947,13 @@ export function MainEditor() {
           return;
         }
 
-        if (
-          !syncedRef.current
-        ) {
+        if (!syncedRef.current) {
           console.warn(
             "⚠️ YJS not synced yet"
           );
 
           return;
         }
-
-        // ---------------------------------------------
-        // GET MONACO MODEL
-        // ---------------------------------------------
 
         const model =
           editor.getModel();
@@ -1211,20 +966,10 @@ export function MainEditor() {
           return;
         }
 
-        // ---------------------------------------------
-        // NORMALIZE PATH
-        // ---------------------------------------------
-
         const normalizedPath =
-          normalizePath(
-            filePath
-          );
+          normalizePath(filePath);
 
         if (!normalizedPath) {
-          console.warn(
-            "⚠️ Cannot bind empty path"
-          );
-
           return;
         }
 
@@ -1233,33 +978,17 @@ export function MainEditor() {
           normalizedPath
         );
 
-        // ---------------------------------------------
-        // CLEAN OLD BINDING
-        // ---------------------------------------------
-
         cleanupBinding();
-
-        // ---------------------------------------------
-        // FILES MAP
-        // ---------------------------------------------
 
         const filesMap =
           ydoc.getMap<Y.Text>(
             "files"
           );
 
-        // ---------------------------------------------
-        // GET YTEXT BY FULL PATH
-        // ---------------------------------------------
-
         let ytext =
           filesMap.get(
             normalizedPath
           );
-
-        // ---------------------------------------------
-        // CREATE YTEXT IF MISSING
-        // ---------------------------------------------
 
         if (!ytext) {
           console.log(
@@ -1283,11 +1012,6 @@ export function MainEditor() {
             existingFile?.content ??
             "";
 
-          console.log(
-            "📄 Initial content length:",
-            initialContent.length
-          );
-
           if (
             initialContent.length > 0
           ) {
@@ -1302,10 +1026,6 @@ export function MainEditor() {
             ytext
           );
         }
-
-        // ---------------------------------------------
-        // YJS → ZUSTAND INITIAL SYNC
-        // ---------------------------------------------
 
         const yjsContent =
           ytext.toString();
@@ -1327,37 +1047,14 @@ export function MainEditor() {
           yjsContent !==
           zustandContent
         ) {
-          console.log(
-            "🔄 YJS → Zustand:",
-            normalizedPath
-          );
-
-          console.log(
-            "YJS length:",
-            yjsContent.length
-          );
-
-          console.log(
-            "Zustand length:",
-            zustandContent.length
-          );
-
           updateFileInStore(
             normalizedPath,
             yjsContent
           );
         }
 
-        // ---------------------------------------------
-        // STORE CURRENT YTEXT
-        // ---------------------------------------------
-
         currentYTextRef.current =
           ytext;
-
-        // ---------------------------------------------
-        // YJS → ZUSTAND OBSERVER
-        // ---------------------------------------------
 
         const observer = (
           _event: Y.YTextEvent,
@@ -1365,11 +1062,6 @@ export function MainEditor() {
         ) => {
           const content =
             ytext!.toString();
-
-          console.log(
-            "🔄 YJS changed:",
-            normalizedPath
-          );
 
           updateFileInStore(
             normalizedPath,
@@ -1384,24 +1076,14 @@ export function MainEditor() {
         ytextObserverRef.current =
           {
             ytext,
-
             observer,
           };
-
-        // ---------------------------------------------
-        // MONACO ↔ YJS
-        // ---------------------------------------------
 
         const binding =
           new MonacoBinding(
             ytext,
-
             model,
-
-            new Set([
-              editor,
-            ]),
-
+            new Set([editor]),
             provider.awareness
           );
 
@@ -1435,27 +1117,14 @@ export function MainEditor() {
       editorRef.current =
         editor;
 
-      // -----------------------------------------------
-      // MONACO → ZUSTAND
-      // -----------------------------------------------
-
       setupEditorChangeListener(
         editor
       );
-
-      // -----------------------------------------------
-      // CURRENT FILE
-      // -----------------------------------------------
 
       const filePath =
         useProjectState
           .getState()
           .selectedFile?.path;
-
-      console.log(
-        "📂 Initial editor file:",
-        filePath
-      );
 
       if (
         filePath &&
@@ -1466,11 +1135,6 @@ export function MainEditor() {
           filePath
         );
       }
-
-      // -----------------------------------------------
-      // CTRL + S
-      // SAVE ONLY
-      // -----------------------------------------------
 
       editor.addAction({
         id: "save-files",
@@ -1515,32 +1179,18 @@ export function MainEditor() {
       filePath
     );
 
-    // -----------------------------------------------
-    // MAKE SURE MONACO → ZUSTAND LISTENER EXISTS
-    // -----------------------------------------------
-
     setupEditorChangeListener(
       editor
     );
 
-    // -----------------------------------------------
-    // WAIT FOR YJS
-    // -----------------------------------------------
-
-    if (
-      !syncedRef.current
-    ) {
+    if (!syncedRef.current) {
       console.log(
-        "⏳ Waiting for YJS sync before binding:",
+        "⏳ Waiting for YJS sync:",
         filePath
       );
 
       return;
     }
-
-    // -----------------------------------------------
-    // BIND NEW FILE
-    // -----------------------------------------------
 
     bindFileToYjs(
       editor,
@@ -1553,7 +1203,7 @@ export function MainEditor() {
   ]);
 
   // ===================================================
-  // CLEANUP MONACO ON UNMOUNT
+  // CLEANUP
   // ===================================================
 
   useEffect(() => {
@@ -1646,118 +1296,721 @@ export function MainEditor() {
     );
 
   // ===================================================
+  // FILE NAME
+  // ===================================================
+
+  const currentFileName =
+    currentPath
+      .split("/")
+      .pop() ??
+    "page.tsx";
+
+  const currentDirectory =
+    currentPath
+      .split("/")
+      .slice(0, -1)
+      .join("/");
+
+  // ===================================================
   // RENDER
   // ===================================================
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#080b12] text-white">
 
       {/* =================================================
-          EDITOR
+          TOP WORKSPACE BAR
       ================================================= */}
 
-      <div className="relative h-full w-1/2 min-w-0">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] bg-[#0d111a]/95 px-3 backdrop-blur-xl">
 
-        <Editor
-          path={currentPath}
-          height="100%"
-          width="100%"
-          defaultValue={
-            selectedFile?.content ??
-            defaultContent
-          }
-          language={
-            currentLanguage
-          }
-          theme="vs-dark"
-          beforeMount={
-            handleBeforeMount
-          }
-          onMount={
-            handleEditorMount
-          }
-          options={{
-            automaticLayout: true,
+        {/* LEFT */}
+        <div className="flex min-w-0 items-center gap-3">
 
-            minimap: {
-              enabled: true,
-            },
+          {/* IDE ICON */}
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-blue-600 shadow-lg shadow-blue-500/20">
 
-            fontSize: 14,
+            <svg
+              className="h-4 w-4 text-white"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M8 9l-3 3 3 3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
 
-            padding: {
-              top: 10,
-            },
+              <path
+                d="M16 9l3 3-3 3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
 
-            tabSize: 2,
-          }}
-        />
+              <path
+                d="M14 5l-4 14"
+                strokeLinecap="round"
+              />
+            </svg>
 
-        {/* =================================================
-            BUTTONS
-        ================================================= */}
+          </div>
 
-        <div className="absolute right-4 top-4 z-30 flex gap-2">
+          {/* FILE BREADCRUMB */}
+          <div className="flex min-w-0 items-center gap-2 text-xs">
 
-          {/* SAVE */}
+            <span className="text-gray-500">
+              Workspace
+            </span>
 
-          <button
-            type="button"
-            onClick={
-              handleSave
-            }
-            disabled={
-              isSaving
-            }
-            className="rounded bg-green-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSaving
-              ? "Saving..."
-              : "Save"}
-          </button>
+            <svg
+              className="h-3 w-3 shrink-0 text-gray-700"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="m9 18 6-6-6-6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
 
-          {/* RUN */}
+            {currentDirectory && (
+              <>
+                <span className="max-w-[240px] truncate text-gray-500">
+                  {currentDirectory}
+                </span>
 
-          <button
-            type="button"
-            onClick={
-              handleRun
-            }
-            disabled={
-              isRunning
-            }
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isRunning
-              ? "Running..."
-              : "Run"}
-          </button>
+                <svg
+                  className="h-3 w-3 shrink-0 text-gray-700"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    d="m9 18 6-6-6-6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </>
+            )}
+
+            <div className="flex min-w-0 items-center gap-2">
+
+              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-400 shadow-sm shadow-blue-400/50" />
+
+              <span className="truncate font-medium text-gray-200">
+                {currentFileName}
+              </span>
+
+            </div>
+
+          </div>
 
         </div>
 
+        {/* RIGHT */}
+        <div className="flex items-center gap-2">
+
+          {/* YJS STATUS */}
+          <div
+            className="hidden items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.025] px-3 py-1.5 text-[11px] text-gray-400 sm:flex"
+            title={
+              syncedRef.current
+                ? "Collaboration connected"
+                : "Connecting..."
+            }
+          >
+
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                syncedRef.current
+                  ? "bg-emerald-400 shadow-sm shadow-emerald-400/60"
+                  : "animate-pulse bg-amber-400"
+              }`}
+            />
+
+            {syncedRef.current
+              ? "Synced"
+              : "Connecting"}
+
+          </div>
+
+          {/* SAVE */}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="group flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 shadow-sm transition-all duration-200 hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+
+            {isSaving ? (
+              <svg
+                className="h-3.5 w-3.5 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  strokeOpacity=".25"
+                  strokeWidth="2.5"
+                />
+
+                <path
+                  d="M21 12a9 9 0 0 0-9-9"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path
+                  d="M5 4h11l3 3v13H5V4Z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+
+                <path
+                  d="M8 4v6h8V4M8 20v-6h8v6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+
+            <span>
+              {isSaving
+                ? "Saving"
+                : "Save"}
+            </span>
+
+            {!isSaving && (
+              <span className="hidden rounded border border-white/[0.08] bg-black/20 px-1.5 py-0.5 text-[9px] text-gray-500 md:inline">
+                ⌘S
+              </span>
+            )}
+
+          </button>
+
+          {/* RUN */}
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={isRunning}
+            className="group flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-200 hover:from-blue-500 hover:to-violet-500 hover:shadow-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+
+            {isRunning ? (
+              <svg
+                className="h-3.5 w-3.5 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  strokeOpacity=".25"
+                  strokeWidth="2.5"
+                />
+
+                <path
+                  d="M21 12a9 9 0 0 0-9-9"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg
+                className="h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.59-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" />
+              </svg>
+            )}
+
+            <span>
+              {isRunning
+                ? "Running"
+                : "Run"}
+            </span>
+
+          </button>
+
+        </div>
       </div>
 
       {/* =================================================
-          PREVIEW
+          MAIN WORKSPACE
       ================================================= */}
 
-      <div className="flex h-full w-1/2 bg-slate-900">
+      <div className="flex min-h-0 flex-1">
 
-        {previewUrl ? (
-          <iframe
-            key={previewUrl}
-            src={previewUrl}
-            className="h-full w-full border-none bg-white"
-            title="Project Preview"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-gray-400">
-            Run the project to see preview.
+        {/* =================================================
+            EDITOR PANEL
+        ================================================= */}
+
+        <section className="relative flex min-w-0 flex-1 flex-col border-r border-white/[0.07] bg-[#0a0d14]">
+
+          {/* EDITOR HEADER */}
+
+          <div className="flex h-9 shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#0d111a] px-3">
+
+            <div className="flex items-center gap-2">
+
+              {/* FILE ICON */}
+              <div className="flex h-5 w-5 items-center justify-center rounded bg-blue-500/10">
+
+                <svg
+                  className="h-3 w-3 text-blue-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path
+                    d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+                    strokeLinejoin="round"
+                  />
+
+                  <path
+                    d="M14 2v6h6"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+
+              </div>
+
+              <span className="text-[11px] font-medium text-gray-400">
+                {currentFileName}
+              </span>
+
+              <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-gray-600">
+                {currentLanguage ===
+                "typescriptreact"
+                  ? "TSX"
+                  : currentLanguage.toUpperCase()}
+              </span>
+
+            </div>
+
+            {/* RIGHT EDITOR INFO */}
+
+            <div className="flex items-center gap-3 text-[10px] text-gray-600">
+
+              <span>
+                Spaces: 2
+              </span>
+
+              <span className="hidden sm:inline">
+                UTF-8
+              </span>
+
+            </div>
+
           </div>
-        )}
+
+          {/* MONACO */}
+
+          <div className="relative min-h-0 flex-1">
+
+            <Editor
+              path={currentPath}
+              height="100%"
+              width="100%"
+              defaultValue={
+                selectedFile?.content ??
+                defaultContent
+              }
+              language={
+                currentLanguage
+              }
+              theme="vs-dark"
+              beforeMount={
+                handleBeforeMount
+              }
+              onMount={
+                handleEditorMount
+              }
+              options={{
+                automaticLayout: true,
+
+                minimap: {
+                  enabled: true,
+                },
+
+                fontSize: 14,
+
+                padding: {
+                  top: 14,
+                  bottom: 14,
+                },
+
+                tabSize: 2,
+
+                smoothScrolling: true,
+
+                cursorSmoothCaretAnimation:
+                  "on",
+
+                cursorBlinking:
+                  "smooth",
+
+                renderWhitespace:
+                  "selection",
+
+                scrollBeyondLastLine:
+                  false,
+
+                roundedSelection: true,
+
+                folding: true,
+
+                bracketPairColorization: {
+                  enabled: true,
+                },
+
+                guides: {
+                  bracketPairs: true,
+                  indentation: true,
+                },
+
+                suggest: {
+                  showMethods: true,
+                  showFunctions: true,
+                },
+
+                wordWrap: "off",
+
+                lineNumbers:
+                  "on",
+
+                glyphMargin: true,
+
+                renderLineHighlight:
+                  "all",
+
+                overviewRulerBorder:
+                  false,
+
+                scrollbar: {
+                  verticalScrollbarSize: 8,
+                  horizontalScrollbarSize: 8,
+                  useShadows: false,
+                },
+
+                hover: {
+                  enabled: true,
+                },
+
+                contextmenu: true,
+              }}
+            />
+
+            {/* EDITOR STATUS */}
+
+            <div className="pointer-events-none absolute bottom-2 left-3 flex items-center gap-2 rounded-md border border-white/[0.06] bg-[#0b0f17]/90 px-2 py-1 text-[9px] text-gray-600 backdrop-blur-md">
+
+              <span className="text-gray-500">
+                {currentPath}
+              </span>
+
+            </div>
+
+          </div>
+        </section>
+
+        {/* =================================================
+            PREVIEW PANEL
+        ================================================= */}
+
+        <section className="flex min-w-0 flex-1 flex-col bg-[#070a10]">
+
+          {/* PREVIEW HEADER */}
+
+          <div className="flex h-9 shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#0d111a] px-3">
+
+            <div className="flex items-center gap-2">
+
+              {/* BROWSER ICON */}
+
+              <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10">
+
+                <svg
+                  className="h-3 w-3 text-emerald-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <rect
+                    x="3"
+                    y="4"
+                    width="18"
+                    height="16"
+                    rx="2"
+                  />
+
+                  <path d="M3 9h18" />
+
+                  <path
+                    d="M7 6.5h.01M10 6.5h.01"
+                    strokeLinecap="round"
+                    strokeWidth="2.5"
+                  />
+                </svg>
+
+              </div>
+
+              <span className="text-[11px] font-medium text-gray-400">
+                Preview
+              </span>
+
+              {/* STATUS */}
+
+              <div className="flex items-center gap-1.5 rounded-full border border-white/[0.05] bg-white/[0.025] px-2 py-0.5">
+
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    previewUrl
+                      ? "bg-emerald-400 shadow-sm shadow-emerald-400/60"
+                      : "bg-gray-600"
+                  }`}
+                />
+
+                <span className="text-[9px] text-gray-500">
+                  {previewUrl
+                    ? "Live"
+                    : "Idle"}
+                </span>
+
+              </div>
+
+            </div>
+
+            {/* PREVIEW URL */}
+
+            {previewUrl && (
+              <div className="hidden max-w-[45%] items-center gap-1.5 rounded-md border border-white/[0.05] bg-black/20 px-2 py-1 md:flex">
+
+                <svg
+                  className="h-3 w-3 shrink-0 text-gray-600"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  <path
+                    d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 7 20l1.15-1.15"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+
+                <span className="truncate text-[9px] text-gray-600">
+                  {previewUrl}
+                </span>
+
+              </div>
+            )}
+
+          </div>
+
+          {/* PREVIEW CONTENT */}
+
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+
+            {previewUrl ? (
+              <div className="h-full w-full bg-white">
+
+                <iframe
+                  key={previewUrl}
+                  src={previewUrl}
+                  className="h-full w-full border-none bg-white"
+                  title="Project Preview"
+                />
+
+              </div>
+            ) : (
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+
+                {/* BACKGROUND GLOW */}
+
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600/5 blur-3xl" />
+
+                {/* GRID */}
+
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-[0.025]"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(rgba(255,255,255,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.8) 1px, transparent 1px)",
+                    backgroundSize:
+                      "32px 32px",
+                  }}
+                />
+
+                {/* EMPTY STATE */}
+
+                <div className="relative z-10 flex max-w-sm flex-col items-center px-6 text-center">
+
+                  {/* ICON */}
+
+                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/[0.08] bg-gradient-to-br from-blue-500/10 to-violet-500/10 shadow-2xl shadow-blue-900/10">
+
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.04]">
+
+                      <svg
+                        className="h-5 w-5 text-gray-500"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
+                        <path
+                          d="M8 9l-3 3 3 3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+
+                        <path
+                          d="M16 9l3 3-3 3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+
+                        <path
+                          d="M14 5l-4 14"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+
+                    </div>
+
+                  </div>
+
+                  <h3 className="text-sm font-semibold text-gray-300">
+                    Your preview is waiting
+                  </h3>
+
+                  <p className="mt-2 max-w-xs text-xs leading-5 text-gray-600">
+                    Run your project to launch
+                    a live preview of the
+                    current workspace.
+                  </p>
+
+                  {/* RUN BUTTON */}
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleRun
+                    }
+                    disabled={
+                      isRunning
+                    }
+                    className="mt-5 flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 transition-all hover:from-blue-500 hover:to-violet-500 hover:shadow-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+
+                    {isRunning ? (
+                      <svg
+                        className="h-3.5 w-3.5 animate-spin"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="9"
+                          stroke="currentColor"
+                          strokeOpacity=".25"
+                          strokeWidth="2.5"
+                        />
+
+                        <path
+                          d="M21 12a9 9 0 0 0-9-9"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="h-3.5 w-3.5"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.59-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" />
+                      </svg>
+                    )}
+
+                    {isRunning
+                      ? "Starting preview..."
+                      : "Run project"}
+
+                  </button>
+
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* PREVIEW FOOTER */}
+
+          <div className="flex h-6 shrink-0 items-center justify-between border-t border-white/[0.05] bg-[#0b0e15] px-3">
+
+            <div className="flex items-center gap-2 text-[9px] text-gray-600">
+
+              <span>
+                Preview
+              </span>
+
+              <span className="text-gray-800">
+                •
+              </span>
+
+              <span>
+                {previewUrl
+                  ? "Connected"
+                  : "Not running"}
+              </span>
+
+            </div>
+
+            <div className="text-[9px] text-gray-700">
+              WebWeaver
+            </div>
+
+          </div>
+
+        </section>
 
       </div>
-
     </div>
   );
 }

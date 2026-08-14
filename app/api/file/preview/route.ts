@@ -1,5 +1,8 @@
 import { Sandbox } from "@vercel/sandbox";
 import { NextRequest, NextResponse } from "next/server";
+import {previewRateLimit} from "@/lib/rate-limiter/index";
+import { VerifyAccessToken } from "@/lib/verify";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 
@@ -84,6 +87,48 @@ export async function POST(
   let sandbox: Sandbox | undefined;
 
   try {
+
+     const cookieStore = await cookies();
+    
+        const token = cookieStore.get("accessToken")?.value;
+    
+        if (!token) {
+          return NextResponse.json(
+            {
+              message: "Not authorised",
+            },
+            {
+              status: 401,
+            }
+          );
+        }
+    
+        const user = VerifyAccessToken(token);
+    
+        if (!user) {
+          return NextResponse.json(
+            {
+              message: "Not authorised",
+            },
+            {
+              status: 401,
+            }
+          );
+        }
+
+   const rateLimit = await previewRateLimit.limit(
+  `preview:user:${user.id}`
+);
+      if(!rateLimit.success){
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    }
+    
+  );
+}
+
     console.log("");
     console.log("========================================");
     console.log("🚀 PREVIEW REQUEST STARTED");

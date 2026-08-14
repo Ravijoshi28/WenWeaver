@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { generalRateLimit } from "@/lib/rate-limiter";
 import { VerifyAccessToken } from "@/lib/verify";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -23,6 +24,33 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    const rateLimit=await generalRateLimit.limit(
+      `inviteUser:${authenticatedUser.id}`
+    )
+
+    if (!rateLimit.success) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    },
+    {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit":
+          String(rateLimit.limit),
+
+        "X-RateLimit-Remaining":
+          String(rateLimit.remaining),
+
+        "X-RateLimit-Reset":
+          String(rateLimit.reset),
+      },
+    }
+  );
+}
+
 
     const { user, projectId } = await req.json();
 

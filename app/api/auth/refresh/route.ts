@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const newAccessToken = AccessToken(user.id);
 
     const response = NextResponse.redirect(
-      new URL("/main/project", req.url)
+      new URL("/main", req.url)
     );
 
     response.cookies.set(

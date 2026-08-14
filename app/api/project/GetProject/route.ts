@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { generalRateLimit } from "@/lib/rate-limiter";
 import { VerifyAccessToken } from "@/lib/verify";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -22,6 +23,31 @@ export async function GET() {
       { status: 401 }
     );
   }
+
+  const rateLimit=await generalRateLimit.limit(
+    `getProject:${user.id}`
+  )
+  if (!rateLimit.success) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many preview requests. Please try again later.",
+    },
+    {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit":
+          String(rateLimit.limit),
+
+        "X-RateLimit-Remaining":
+          String(rateLimit.remaining),
+
+        "X-RateLimit-Reset":
+          String(rateLimit.reset),
+      },
+    }
+  );
+}
 
   try {
     const projects = await prisma.project.findMany({
