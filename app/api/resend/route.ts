@@ -4,11 +4,11 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req:NextRequest) {
-  
+
   try {
     const otp = crypto.randomInt(100000, 999999).toString();
     const {email}=await req.json()
-    
+
   const otpHash = crypto
     .createHash("sha256")
     .update(otp)
@@ -32,13 +32,12 @@ export async function POST(req:NextRequest) {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     },
   });
-  console.log(otp);
 
     return NextResponse.json({message:"OPT sent to your mail",
         redirect:"/verify-email"
     })
-  } catch (error) {
-    console.log(error);
+  } catch  {
+
     return NextResponse.json({message:"OPT not sent"})
 
   }

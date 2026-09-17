@@ -77,10 +77,7 @@ async function readLocalDirectory(
         content,
       });
     } catch (error) {
-      console.error(
-        `Could not read local file: ${fullPath}`,
-        error
-      );
+      console.error("Operation failed in app/api/project/[id]/files/route.ts.");
     }
   }
 
@@ -155,10 +152,7 @@ async function readSupabaseDirectory(
           .download(itemPath);
 
       if (downloadError) {
-        console.error(
-          `Could not download ${itemPath}:`,
-          downloadError
-        );
+        console.error("Operation failed in app/api/project/[id]/files/route.ts.");
 
         continue;
       }
@@ -176,10 +170,7 @@ async function readSupabaseDirectory(
         content,
       });
     } catch (error) {
-      console.error(
-        `Could not read Supabase file ${itemPath}:`,
-        error
-      );
+      console.error("Operation failed in app/api/project/[id]/files/route.ts.");
     }
   }
 
@@ -300,14 +291,6 @@ export async function POST(
     const useSupabase =
       process.env.USE_SUPABASE_STORAGE === "true";
 
-    console.log("=================================");
-    console.log("FILES API");
-    console.log("Environment:", process.env.NODE_ENV);
-    console.log("Use Supabase:", useSupabase);
-    console.log("Owner ID:", ownerId);
-    console.log("Project ID:", id);
-    console.log("=================================");
-
     /* =====================================================
        SUPABASE STORAGE
        ===================================================== */
@@ -315,17 +298,8 @@ export async function POST(
     if (useSupabase) {
       const storagePath = `${ownerId}/${id}`;
 
-      console.log(
-        "Reading from Supabase:",
-        storagePath
-      );
-
       const files =
         await readSupabaseDirectory(storagePath);
-
-      console.log(
-        `Successfully read ${files.length} root entries from Supabase`
-      );
 
       return NextResponse.json(
         {
@@ -351,21 +325,12 @@ export async function POST(
       id
     );
 
-    console.log(
-      "Reading local project:",
-      projectPath
-    );
-
     let stat;
 
     try {
       stat = await fs.stat(projectPath);
     } catch (error) {
-      console.error(
-        "Local project directory does not exist:",
-        projectPath,
-        error
-      );
+      console.error("Operation failed in app/api/project/[id]/files/route.ts.");
 
       return NextResponse.json(
         {
@@ -393,10 +358,6 @@ export async function POST(
     const files =
       await readLocalDirectory(projectPath);
 
-    console.log(
-      `Successfully read ${files.length} root entries from local filesystem`
-    );
-
     return NextResponse.json(
       {
         success: true,
@@ -409,10 +370,7 @@ export async function POST(
       { status: 200 }
     );
   } catch (error) {
-    console.error(
-      "FILES API ERROR:",
-      error
-    );
+    console.error("Operation failed in app/api/project/[id]/files/route.ts.");
 
     return NextResponse.json(
       {

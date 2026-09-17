@@ -1,94 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useRef, useState } from "react";
+import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
 import { sendOTP, VerifyCall } from "@/ApiCalls/auth/authenticate";
+import { AuthFrame } from "@/app/components/auth-frame";
+
 export default function VerifyEmail() {
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
-
-  const mutation = useMutation({
-    mutationFn:VerifyCall,
-    onSuccess: (res) => {
-      toast.success(res?.message);
-    },
-
-    onError: () => {
-      toast.error("Invalid OTP or OTP expired");
-    },
-  });
-
-  const resendMutation = useMutation({
-  mutationFn: sendOTP,
-
-  onSuccess: (res) => {
-    toast.success("OTP sent again");
-  },
-
-  onError: () => {
-    toast.error("Failed to resend OTP");
-  },
-});
-
-  const resendOTP = (e:any) => {
-    
-    console.log(email)
-  resendMutation.mutate(email);
-};
-
-  const submit = () => {
-    if (otp.length !== 6) {
-      toast.error("OTP must be 6 digits");
-      return;
-    }
-
-    mutation.mutate({otp,email});
-  };
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-5">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-8">
-        <h1 className="text-2xl font-bold text-slate-100">
-          Verify Your Email
-        </h1>
-
-        <p className="mt-2 text-slate-400">
-          Enter the verification code sent to your email.
-        </p>
-
-        <input
-          type="email"
-          placeholder="Your email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white outline-none focus:border-cyan-400"
-           required/>
-
-        <input
-          type="text"
-          placeholder="Enter OTP"
-          maxLength={6}
-          value={otp}
-          onChange={(e) => setOtp(e.target.value)}
-          className="mt-4 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-center text-xl tracking-[0.5em] text-white outline-none focus:border-cyan-400"
-        />
-
-        <button
-          onClick={submit}
-          disabled={mutation.isPending}
-          className="mt-5 w-full rounded-xl bg-cyan-500 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-50"
-        >
-          {mutation.isPending ? "Verifying..." : "Verify"}
-        </button>
-         <button
-  onClick={resendOTP}
-  disabled={resendMutation.isPending}
->
-  {resendMutation.isPending ? "Sending..." : "Resend OTP"}
-</button>
-      </div>
-     
-    </main>
-  );
+  const emailInput = useRef<HTMLInputElement>(null);
+  const mutation = useMutation({ mutationFn: VerifyCall });
+  const resend = useMutation({ mutationFn: sendOTP });
+  return <AuthFrame title="One last step." description="Request a code, then verify your email to open your workspace.">
+    <form className="form-stack" onSubmit={event => { event.preventDefault(); mutation.mutate({ otp, email }); }}>
+      <div className="field"><label htmlFor="verify-email">Email address</label><input ref={emailInput} id="verify-email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={event => { setEmail(event.target.value); mutation.reset(); resend.reset(); }} /></div>
+      <div className="field"><label htmlFor="verification-code">Verification code</label><input id="verification-code" name="otp" type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" maxLength={6} pattern="[0-9]{6}" required className="otp-input" value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, ""))} /><p className="field-help">Use the code sent to your registered email.</p></div>
+      {mutation.isError && <p role="alert" className="form-error">The code could not be verified. Check it or request a new one.</p>}
+      {mutation.isSuccess && <p role="status" className="form-success">Email verified. <Link href="/auth/login">Continue to Sign In</Link></p>}
+      <button type="submit" className="primary-button full-width" disabled={mutation.isPending || resend.isPending || mutation.isSuccess}>{mutation.isPending ? "Verifying..." : "Verify email"}</button>
+    </form>
+    <button type="button" className="secondary-button full-width resend-button" disabled={resend.isPending || mutation.isPending || mutation.isSuccess} onClick={() => { if (emailInput.current?.reportValidity()) resend.mutate(email); }}>{resend.isPending ? "Sending..." : "Resend OTP"}</button>
+    {resend.isError && <p role="alert" className="form-error">Could not send the code. Please try again.</p>}
+    {resend.isSuccess && <p role="status" className="form-success">Code requested. Check your inbox.</p>}
+    <p className="form-footer">Already verified? <Link href="/auth/login">Sign In</Link></p>
+  </AuthFrame>;
 }

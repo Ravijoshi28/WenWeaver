@@ -338,7 +338,7 @@ export const useProjectState =
                 ),
             },
           });
-          console.log(file, "SELECTED FILE");
+
         },
 
         /* ===================================================
@@ -363,10 +363,7 @@ export const useProjectState =
             );
 
           if (!result.updated) {
-            console.warn(
-              "⚠️ updateFileContent: file not found",
-              normalizedPath
-            );
+            console.warn("Operation failed in useStates/projectStates.ts.");
 
             return;
           }
@@ -394,10 +391,6 @@ export const useProjectState =
                 : selected,
           });
 
-          console.log(
-            "💾 ZUSTAND FILE UPDATED:",
-            normalizedPath
-          );
         },
 
         /* ===================================================

@@ -1,122 +1,50 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ArrowRightIcon, CodeIcon, UsersThreeIcon, PlayIcon, FolderSimpleIcon } from "@phosphor-icons/react/dist/ssr";
+import { SiteHeader } from "../components/site-header";
 
 export default function LandingPage() {
-  return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
-      {/* Hero Section */}
-      <section className="mx-auto flex max-w-7xl flex-col items-center px-6 py-24 text-center">
-        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1 text-sm text-emerald-400">
-          Browser-Based Development
-        </span>
-
-        <h1 className="mt-6 text-5xl font-extrabold tracking-tight text-slate-100 md:text-6xl">
-          Build, Code & Collaborate
-          <span className="block bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-            Directly in Your Browser
-          </span>
-        </h1>
-
-        <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-400">
-          A cloud development platform where developers can code inside a real
-          Linux terminal, collaborate in real-time, and build projects together
-          without installing anything.
-        </p>
-
-        <div className="mt-10 flex gap-4 ">
-          <Link href="/auth/signup">
-          <button className=" rounded-xl hover:cursor-pointer bg-emerald-500 px-6 py-3 font-semibold text-slate-900 transition hover:bg-emerald-400">
-            Get Started
-          </button>
-          </Link>
-          
-
-          <button className="rounded-xl border border-slate-700 px-6 py-3 text-slate-300 transition hover:border-blue-400 hover:text-blue-300">
-            Learn More
-          </button>
-        </div>
-      </section>
-
-      {/* Terminal Feature */}
-      <section className="mx-auto grid max-w-7xl items-center gap-14 px-6 py-20 md:grid-cols-2">
-        <div>
-          <span className="rounded-full bg-blue-500/10 px-3 py-1 text-sm text-blue-400">
-            Feature 01
-          </span>
-
-          <h2 className="mt-4 text-4xl font-bold text-slate-100">
-            Powerful Linux Terminal
-          </h2>
-
-          <p className="mt-5 text-lg leading-8 text-slate-400">
-            Open a fully functional Linux terminal directly in your browser.
-            Install packages, run commands, execute code, and manage projects
-            just like on your local machine.
-          </p>
-
-          <ul className="mt-8 space-y-3 text-slate-300">
-            <li>✅ Browser-based terminal</li>
-            <li>✅ Multiple programming languages</li>
-            <li>✅ No installation required</li>
-            <li>✅ Instant development environment</li>
-          </ul>
-        </div>
-
-        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl shadow-blue-900/20">
-          <Image
-            src="/wiKPSANY.gif"
-            alt="Terminal"
-            width={900}
-            height={600}
-            className="rounded-2xl"
-            unoptimized
-          />
-        </div>
-      </section>
-
-      {/* Collaboration Feature */}
-      <section className="bg-slate-900/50 py-24">
-        <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 md:grid-cols-2">
-          <div className="order-2 md:order-1 rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl shadow-emerald-900/20">
-            <Image
-              src="/collab.gif"
-              alt="Collaboration"
-              width={900}
-              height={600}
-              className="rounded-2xl"
-              unoptimized
-            />
+  return <div className="site-page">
+    <SiteHeader />
+    <main id="main-content">
+      <section className="site-container landing-hero">
+        <div className="hero-copy">
+          <p className="eyebrow">A shared space for your code</p>
+          <h1>Build something.<br /><span>Together.</span></h1>
+          <p className="hero-description">Write code, collaborate in real time, and preview your next idea. All in your browser.</p>
+          <div className="hero-actions">
+            <Link href="/auth/signup" className="primary-button">Get Started <ArrowRightIcon size={19} aria-hidden="true" /></Link>
+            <a href="#features" className="text-link">Learn More <ArrowRightIcon size={18} aria-hidden="true" /></a>
           </div>
-
-          <div className="order-1 md:order-2">
-            <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-sm text-emerald-400">
-              Feature 02
-            </span>
-
-            <h2 className="mt-4 text-4xl font-bold text-slate-100">
-              Real-Time Collaborative Coding
-            </h2>
-
-            <p className="mt-5 text-lg leading-8 text-slate-400">
-              Invite teammates and code together in real time, similar to Google
-              Docs. Every cursor, edit, and terminal action is synchronized
-              instantly for a seamless collaborative experience.
-            </p>
-
-            <ul className="mt-8 space-y-3 text-slate-300">
-              <li>💚 Live cursor tracking</li>
-              <li>💚 Instant code synchronization</li>
-              <li>💚 Shared terminal sessions</li>
-              <li>💚 Team project collaboration</li>
-            </ul>
+        </div>
+        <div className="hero-art">
+          <Image src="/images/collaboration-weave.png" alt="Interwoven green and silver ribbons representing collaborative work" width={1254} height={1254} preload sizes="(max-width: 767px) 100vw, 50vw" />
+        </div>
+      </section>
+      <section id="features" className="site-container feature-section">
+        <div className="section-heading">
+          <h2>Less setup.<br />More building.</h2>
+          <p>Keep your project, your teammates, and your next change in one workspace.</p>
+        </div>
+        <div className="feature-layout">
+          <article className="feature-main">
+            <div className="feature-icon"><UsersThreeIcon size={25} aria-hidden="true" /></div>
+            <h3>Same file. Shared focus.</h3>
+            <p>Work in the same project with live edits and collaborator cursors, powered by Yjs and Monaco.</p>
+            <Image src="/collab.gif" alt="Illustration of people collaborating at their computers" width={900} height={600} className="collaboration-image" unoptimized sizes="(max-width: 767px) 100vw, 55vw" />
+          </article>
+          <div className="feature-details">
+            <article><CodeIcon size={26} aria-hidden="true" /><h3>A familiar place to code.</h3><p>Open your files in Monaco, with syntax highlighting and the editing tools you already know.</p></article>
+            <article><PlayIcon size={26} aria-hidden="true" /><h3>See your changes run.</h3><p>Launch a Next.js preview in Vercel Sandbox and see your project outside the editor.</p></article>
+            <article><FolderSimpleIcon size={26} aria-hidden="true" /><h3>Pick up where you left off.</h3><p>Save files to cloud storage and keep your projects organized in one workspace.</p></article>
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-800 py-10 text-center text-slate-500">
-        © 2026 Your Platform. Build together. Ship faster.
-      </footer>
+      <section className="site-container landing-close">
+        <h2>Your next idea<br />starts with a file.</h2>
+        <Link href="/auth/signup" className="primary-button">Get Started <ArrowRightIcon size={19} aria-hidden="true" /></Link>
+      </section>
     </main>
-  );
+    <footer className="site-container site-footer"><Link href="/auth" className="wordmark">WebWeaver</Link><p>A place to build together.</p><span>&copy; {new Date().getFullYear()} WebWeaver</span></footer>
+  </div>;
 }

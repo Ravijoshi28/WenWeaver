@@ -8,7 +8,6 @@ interface AddUserPayload {
   projectId: string;
 }
 
-
 export async function CreateProject(pName: string) {
   const res = await AxiosInstance.post("/project", {
     projectName: pName,
@@ -18,16 +17,16 @@ export async function CreateProject(pName: string) {
 }
 
   export async function GetProject() {
- 
+
     const res = await AxiosInstance.get("/project/GetProject");
-    
+
     return res.data;
 }
 
 export async function GetProjectFolder(ownerId:string,id:string){
-  console.log("working")
+
   const res=await AxiosInstance.post(`/project/${id}/files`,{ownerId})
-  console.log(res);
+
   return res.data
 }
 

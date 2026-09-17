@@ -67,7 +67,7 @@ export async function DELETE(
       { status: 200 }
     );
   } catch (error) {
-    console.error(error);
+    console.error("Operation failed in app/api/project/[id]/route.ts.");
 
     return NextResponse.json(
       { message: "Server error" },

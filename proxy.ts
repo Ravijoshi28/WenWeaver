@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export function proxy(request: NextRequest) {
-  const refreshToken = request.cookies.get("refreshToken")?.value;
+  const accessToken = request.cookies.get("accessToken")?.value;
   const pathname = request.nextUrl.pathname;
 
   const protectedRoutes = ["/main", "/dashboard", "/projects", "/profile"];
@@ -10,12 +10,12 @@ export function proxy(request: NextRequest) {
     pathname.startsWith(route)
   );
 
-  if (isProtected && !refreshToken) {
+  if (isProtected && !accessToken) {
     return NextResponse.redirect(new URL("/auth", request.url));
   }
 
   if (
-    refreshToken &&
+    accessToken &&
     (pathname === "/auth/login" || pathname === "/auth/signup")
   ) {
     return NextResponse.redirect(new URL("/main/project", request.url));

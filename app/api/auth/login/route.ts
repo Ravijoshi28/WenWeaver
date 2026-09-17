@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const {  email, password } = await req.json();
-   
+
     if ( !email || !password) {
       return NextResponse.json(
         { message: "All fields are required" },
@@ -41,7 +41,7 @@ const ipLimit =
       error:
         "Too many preview requests. Please try again later.",
     }
-    
+
   );
 }
 
@@ -70,7 +70,7 @@ const ipLimit =
     if (!pepper) {
       throw new Error("PEPPERED_PASS is missing");
     }
-    console.log("working")
+
     const pepperedPassword = password + pepper;
     const realPass=user.password;
    const checkedPass=await bcrypt.compare(pepperedPassword,realPass)
@@ -84,7 +84,6 @@ const ipLimit =
 
    const accessToken = AccessToken(user.id);
    const refreshToken = RefreshToken(user.id);
-       console.log("working2")
 
     await prisma.user.update({
   where: {
@@ -97,7 +96,6 @@ const ipLimit =
 });
 
    const cookieStore = await cookies();
-      console.log("working3")
 
     cookieStore.set("accessToken", accessToken, {
   httpOnly: true,
@@ -109,12 +107,10 @@ const ipLimit =
 cookieStore.set("refreshToken", refreshToken, {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
+  path:"/api/auth/refresh",
   sameSite: "strict",
   maxAge: 60 * 60 * 24 * 7,
 });
-
-    console.log("working4")
-
 
     return NextResponse.json(
       {
@@ -125,7 +121,7 @@ cookieStore.set("refreshToken", refreshToken, {
     );
 
   } catch (error) {
-    console.log(error)
+
     return NextResponse.json(
       { message: error },
       { status: 500 }

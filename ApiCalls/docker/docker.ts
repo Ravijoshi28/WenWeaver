@@ -81,10 +81,6 @@ export async function runPreview(
     throw new Error("Project files are required.");
   }
 
-  console.log(
-    `🚀 Starting preview for ${projectId}`
-  );
-
   try {
     // ---------------------------------------------------
     // Send files to Next.js API
@@ -122,16 +118,9 @@ export async function runPreview(
       );
     }
 
-    console.log(
-      `🟢 Preview ready: ${data.previewUrl}`
-    );
-
     return data;
   } catch (error: any) {
-    console.error(
-      "❌ Preview request failed:",
-      error
-    );
+    console.error("Operation failed in ApiCalls/docker/docker.ts.");
 
     // Axios error response
     const message =

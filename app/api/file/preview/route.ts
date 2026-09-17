@@ -31,7 +31,7 @@ function flattenFiles(
 
   for (const file of files) {
     if (!file?.name) {
-      console.warn("⚠️ Skipping file without name:", file);
+      console.warn("Operation failed in app/api/file/preview/route.ts.");
       continue;
     }
 
@@ -68,16 +68,6 @@ function flattenFiles(
 }
 
 // ======================================================
-// DELAY
-// ======================================================
-
-function sleep(ms: number) {
-  return new Promise((resolve) =>
-    setTimeout(resolve, ms)
-  );
-}
-
-// ======================================================
 // POST /api/file/preview
 // ======================================================
 
@@ -89,9 +79,9 @@ export async function POST(
   try {
 
      const cookieStore = await cookies();
-    
+
         const token = cookieStore.get("accessToken")?.value;
-    
+
         if (!token) {
           return NextResponse.json(
             {
@@ -102,9 +92,9 @@ export async function POST(
             }
           );
         }
-    
+
         const user = VerifyAccessToken(token);
-    
+
         if (!user) {
           return NextResponse.json(
             {
@@ -125,20 +115,13 @@ export async function POST(
       error:
         "Too many preview requests. Please try again later.",
     }
-    
+
   );
 }
-
-    console.log("");
-    console.log("========================================");
-    console.log("🚀 PREVIEW REQUEST STARTED");
-    console.log("========================================");
 
     // ==================================================
     // READ REQUEST
     // ==================================================
-
-    console.log("📥 Reading request body...");
 
     const body = await req.json();
 
@@ -147,15 +130,6 @@ export async function POST(
 
     const files =
       body?.files as FileNode[] | undefined;
-
-    console.log("🆔 Project ID:", projectId);
-
-    console.log(
-      "📁 Received file nodes:",
-      Array.isArray(files)
-        ? files.length
-        : "INVALID"
-    );
 
     // ==================================================
     // VALIDATION
@@ -196,15 +170,8 @@ export async function POST(
     // FLATTEN FILES
     // ==================================================
 
-    console.log("");
-    console.log("📂 Flattening project files...");
-
     const flattened =
       flattenFiles(files);
-
-    console.log(
-      `📁 Flattened files: ${flattened.length}`
-    );
 
     if (flattened.length === 0) {
       console.error(
@@ -221,27 +188,8 @@ export async function POST(
     }
 
     // ==================================================
-    // DEBUG FILE LIST
-    // ==================================================
-
-    console.log(
-      "📋 Files that will be uploaded:"
-    );
-
-    for (const file of flattened) {
-      console.log(
-        `   ${file.path} (${file.content.length} chars)`
-      );
-    }
-
-    // ==================================================
     // CREATE SANDBOX
     // ==================================================
-
-    console.log("");
-    console.log(
-      "📦 Creating Vercel Sandbox..."
-    );
 
     sandbox =
       await Sandbox.create({
@@ -255,85 +203,9 @@ export async function POST(
         persistent: false,
       });
 
-    console.log(
-      "✅ Sandbox created"
-    );
-
-    console.log(
-      "🆔 Sandbox ID:",
-      sandbox.name
-    );
-
-    // ==================================================
-    // DEBUG NODE
-    // ==================================================
-
-    console.log("");
-    console.log(
-      "🔍 Checking Sandbox Node version..."
-    );
-
-    const nodeVersion =
-      await sandbox.runCommand({
-        cmd: "node",
-        args: ["-v"],
-        cwd: "/vercel/sandbox",
-      });
-
-    console.log(
-      "Node exit code:",
-      nodeVersion.exitCode
-    );
-
-    console.log(
-      "Node stdout:",
-      await nodeVersion.stdout()
-    );
-
-    console.log(
-      "Node stderr:",
-      await nodeVersion.stderr()
-    );
-
-    // ==================================================
-    // DEBUG NPM
-    // ==================================================
-
-    console.log("");
-    console.log(
-      "🔍 Checking npm version..."
-    );
-
-    const npmVersion =
-      await sandbox.runCommand({
-        cmd: "npm",
-        args: ["-v"],
-        cwd: "/vercel/sandbox",
-      });
-
-    console.log(
-      "npm exit code:",
-      npmVersion.exitCode
-    );
-
-    console.log(
-      "npm stdout:",
-      await npmVersion.stdout()
-    );
-
-    console.log(
-      "npm stderr:",
-      await npmVersion.stderr()
-    );
-
     // ==================================================
     // WRITE FILES
     // ==================================================
-
-    console.log("");
-    console.log(
-      "📤 Uploading project files..."
-    );
 
     await sandbox.writeFiles(
       flattened.map(
@@ -349,18 +221,9 @@ export async function POST(
       )
     );
 
-    console.log(
-      `✅ Uploaded ${flattened.length} files`
-    );
-
     // ==================================================
     // CHECK PACKAGE.JSON
     // ==================================================
-
-    console.log("");
-    console.log(
-      "🔍 Checking package.json..."
-    );
 
     const packageCheck =
       await sandbox.runCommand({
@@ -374,27 +237,12 @@ export async function POST(
           "/vercel/sandbox",
       });
 
-    const packageStdout =
-      await packageCheck.stdout();
 
     const packageStderr =
       await packageCheck.stderr();
 
-    console.log(
-      "package.json exit code:",
-      packageCheck.exitCode
-    );
-
-    console.log(
-      "package.json stdout:",
-      packageStdout
-    );
-
     if (packageStderr) {
-      console.error(
-        "package.json stderr:",
-        packageStderr
-      );
+      console.error("Operation failed in app/api/file/preview/route.ts.");
     }
 
     if (
@@ -424,11 +272,6 @@ export async function POST(
     // INSTALL DEPENDENCIES
     // ==================================================
 
-    console.log("");
-    console.log(
-      "📦 Running npm install..."
-    );
-
     const install =
       await sandbox.runCommand({
         cmd: "npm",
@@ -446,35 +289,6 @@ export async function POST(
 
     const installStderr =
       await install.stderr();
-
-    console.log(
-      "----------------------------------------"
-    );
-
-    console.log(
-      "📦 npm install exit code:",
-      install.exitCode
-    );
-
-    console.log(
-      "📦 npm install STDOUT:"
-    );
-
-    console.log(
-      installStdout
-    );
-
-    console.log(
-      "📦 npm install STDERR:"
-    );
-
-    console.log(
-      installStderr
-    );
-
-    console.log(
-      "----------------------------------------"
-    );
 
     if (
       install.exitCode !== 0
@@ -507,18 +321,9 @@ export async function POST(
       );
     }
 
-    console.log(
-      "✅ npm install completed"
-    );
-
     // ==================================================
     // CHECK NEXT COMMAND
     // ==================================================
-
-    console.log("");
-    console.log(
-      "🔍 Checking Next.js installation..."
-    );
 
     const nextVersion =
       await sandbox.runCommand({
@@ -538,21 +343,6 @@ export async function POST(
 
     const nextStderr =
       await nextVersion.stderr();
-
-    console.log(
-      "Next version exit code:",
-      nextVersion.exitCode
-    );
-
-    console.log(
-      "Next version stdout:",
-      nextStdout
-    );
-
-    console.log(
-      "Next version stderr:",
-      nextStderr
-    );
 
     if (
       nextVersion.exitCode !== 0
@@ -586,14 +376,7 @@ export async function POST(
 // START NEXT.JS
 // ======================================================
 
-console.log("");
-console.log("▶️ Starting Next.js...");
-
-console.log("📍 cwd:", "/vercel/sandbox");
-console.log("🌐 Host:", "0.0.0.0");
-console.log("🔌 Port:", "3000");
-
-const start = await sandbox.runCommand({
+await sandbox.runCommand({
   cmd: "npm",
 
   args: [
@@ -611,27 +394,13 @@ const start = await sandbox.runCommand({
   detached: true,
 });
 
-console.log("▶️ Next.js command started");
-
-console.log(
-  "▶️ Initial exit code:",
-  start.exitCode
-);
-
 // ======================================================
 // WAIT FOR SERVER
 // ======================================================
 
-console.log(
-  "⏳ Waiting for Next.js to start listening..."
-);
-
 let serverReady = false;
 
 for (let attempt = 1; attempt <= 15; attempt++) {
-  console.log(
-    `🔎 Checking port 3000 (${attempt}/15)...`
-  );
 
   try {
     const check = await sandbox.runCommand({
@@ -647,42 +416,13 @@ for (let attempt = 1; attempt <= 15; attempt++) {
       cwd: "/vercel/sandbox",
     });
 
-    const stdout =
-      await check.stdout();
-
-    const stderr =
-      await check.stderr();
-
-    console.log(
-      `Port check exit code: ${check.exitCode}`
-    );
-
-    console.log(
-      "Port check stdout:",
-      stdout
-    );
-
-    if (stderr) {
-      console.log(
-        "Port check stderr:",
-        stderr
-      );
-    }
-
     if (check.exitCode === 0) {
       serverReady = true;
 
-      console.log(
-        "✅ Next.js is listening on port 3000"
-      );
-
       break;
     }
-  } catch (error) {
-    console.log(
-      "⚠️ Port check failed:",
-      error
-    );
+  } catch {
+    // Retry while the development server is starting.
   }
 
   await new Promise((resolve) =>
@@ -699,43 +439,6 @@ if (!serverReady) {
     "❌ Next.js did not start listening on port 3000"
   );
 
-  // Run a diagnostic command rather than
-  // reading stdout/stderr from the detached process.
-
-  console.log(
-    "🔍 Running Next.js diagnostic..."
-  );
-
-  const diagnostic =
-    await sandbox.runCommand({
-      cmd: "ps",
-
-      args: ["aux"],
-
-      cwd: "/vercel/sandbox",
-    });
-
-  const psOutput =
-    await diagnostic.stdout();
-
-  const psError =
-    await diagnostic.stderr();
-
-  console.log(
-    "PROCESS LIST:"
-  );
-
-  console.log(
-    psOutput
-  );
-
-  if (psError) {
-    console.log(
-      "PROCESS LIST ERROR:",
-      psError
-    );
-  }
-
   await sandbox.stop();
 
   sandbox = undefined;
@@ -746,9 +449,6 @@ if (!serverReady) {
 
       message:
         "Next.js failed to start on port 3000",
-
-      processList:
-        psOutput,
     },
     { status: 500 }
   );
@@ -758,34 +458,8 @@ if (!serverReady) {
 // CREATE PREVIEW URL
 // ======================================================
 
-console.log(
-  "🌐 Creating Sandbox preview URL..."
-);
-
 const previewUrl =
   sandbox.domain(3000);
-
-console.log(
-  "========================================"
-);
-
-console.log(
-  "🟢 PREVIEW READY"
-);
-
-console.log(
-  "🆔 Sandbox:",
-  sandbox.name
-);
-
-console.log(
-  "🌐 URL:",
-  previewUrl
-);
-
-console.log(
-  "========================================"
-);
 
 // ======================================================
 // RETURN
@@ -799,70 +473,24 @@ return NextResponse.json({
   previewUrl,
 });
 
-    
-
   } catch (error) {
     // ==================================================
     // GLOBAL ERROR
     // ==================================================
 
-    console.error("");
-    console.error(
-      "========================================"
-    );
-
-    console.error(
-      "❌ PREVIEW ROUTE FAILED"
-    );
-
-    console.error(
-      "========================================"
-    );
-
-    console.error(
-      "Error:",
-      error
-    );
-
-    if (
-      error instanceof Error
-    ) {
-      console.error(
-        "Error name:",
-        error.name
-      );
-
-      console.error(
-        "Error message:",
-        error.message
-      );
-
-      console.error(
-        "Error stack:",
-        error.stack
-      );
-    }
+    console.error("Preview generation failed.");
 
     // ==================================================
     // CLEANUP
     // ==================================================
 
     if (sandbox) {
-      console.log(
-        "🧹 Stopping Sandbox..."
-      );
 
       try {
         await sandbox.stop();
 
-        console.log(
-          "✅ Sandbox stopped"
-        );
-      } catch (stopError) {
-        console.error(
-          "❌ Failed to stop Sandbox:",
-          stopError
-        );
+      } catch  {
+        console.error("Operation failed in app/api/file/preview/route.ts.");
       }
     }
 
@@ -870,10 +498,7 @@ return NextResponse.json({
       {
         success: false,
 
-        message:
-          error instanceof Error
-            ? error.message
-            : "Preview failed",
+        message: "Preview failed. Please try again.",
       },
       { status: 500 }
     );

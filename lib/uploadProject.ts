@@ -6,7 +6,6 @@ import {
   SUPABASE_BUCKET,
 } from "@/lib/supabase";
 
-
 // =================================================
 // TYPES
 // =================================================
@@ -15,7 +14,6 @@ export interface ProjectFile {
   path: string;
   content: string | Buffer;
 }
-
 
 // =================================================
 // IGNORED DIRECTORIES
@@ -28,7 +26,6 @@ const IGNORED_DIRECTORIES = new Set([
   "dist",
   "build",
 ]);
-
 
 // =================================================
 // UPLOAD A LOCAL DIRECTORY
@@ -108,13 +105,8 @@ async function uploadDirectory(
       );
     }
 
-    console.log(
-      "Uploaded to Supabase:",
-      storagePath
-    );
   }
 }
-
 
 // =================================================
 // UPLOAD GENERATED FILES
@@ -185,13 +177,8 @@ async function uploadFiles(
       );
     }
 
-    console.log(
-      "Uploaded to Supabase:",
-      storagePath
-    );
   }
 }
-
 
 // =================================================
 // MAIN FUNCTION
@@ -225,11 +212,6 @@ export async function uploadProjectToSupabase(
     const projectId =
       projectIdOrFiles;
 
-    console.log(
-      "Uploading local project directory:",
-      projectPath
-    );
-
     await uploadDirectory(
       projectPath,
       ownerId,
@@ -238,7 +220,6 @@ export async function uploadProjectToSupabase(
 
     return;
   }
-
 
   // =================================================
   // PRODUCTION
@@ -258,10 +239,6 @@ export async function uploadProjectToSupabase(
 
   const files =
     projectIdOrFiles;
-
-  console.log(
-    `Uploading ${files.length} generated files`
-  );
 
   await uploadFiles(
     files,

@@ -1,170 +1,38 @@
-"use client";
+﻿"use client";
 
-import {
-  GetProject,
-  DeleteProject,
-} from "@/ApiCalls/ProjectSetup/project";
+import { GetProject, DeleteProject } from "@/ApiCalls/ProjectSetup/project";
+import Link from "next/link";
+import { toast } from "sonner";
+import { ArrowLeftIcon, CodeIcon, TrashIcon } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SiteHeader } from "@/app/components/site-header";
 
-import { TrashIcon } from "@phosphor-icons/react";
-
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-
-interface ProjectItem {
-  color: string;
-  createdAt: string;
-  description: string | null;
-  icon: string | null;
-  id: string;
-  isPublic: boolean;
-  language: string;
-  lastOpenedAt: string | null;
-  name: string;
-  ownerId: string;
-  template: string;
-  updatedAt: string;
-}
-
-interface GetProjectResponse {
-  projects: ProjectItem[];
-}
+interface ProjectItem { id: string; name: string; description: string | null; language: string; createdAt: string; }
 
 export default function Page() {
   const queryClient = useQueryClient();
-
-  const {
-    data: projectList,
-    isLoading,
-    error,
-  } = useQuery<GetProjectResponse>({
-    queryKey: ["projects"],
-    queryFn: GetProject,
-  });
-
+  const { data, isLoading, error, refetch } = useQuery<{ projects: ProjectItem[] }>({ queryKey: ["projects"], queryFn: GetProject });
   const mutation = useMutation({
     mutationFn: DeleteProject,
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["projects"],
-      });
-    },
-
-    onError: (error) => {
-      console.error("Failed to delete project:", error);
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["projects"] }); toast.success("Project deleted"); },
+    onError: () => toast.error("Could not delete the project. Please try again."),
   });
-
-  const deleteProject = (id: string) => {
-    mutation.mutate(id);
-  };
-
-  
-
-  if (error) {
-    return (
-      <section className="min-h-screen bg-blue-900 p-6">
-        <h1 className="text-2xl font-bold text-black">
-          Manage All Your Created Projects in One Place
-        </h1>
-
-        <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-5 text-red-400">
-          Failed to load projects.
-        </div>
-      </section>
-    );
-  }
-
-  const projects = projectList?.projects ?? [];
-
-  return (
-    <section className="min-h-screen bg-slate-900 p-6">
-      <h1 className="text-2xl font-bold text-white">
-        Manage All Your Created Projects in One Place
-      </h1>
-
-        {isLoading ? (
-  <section className="min-h-screen bg-blue-900 p-6">
-    <h1 className="text-2xl font-bold text-black">
-      Manage All Your Created Projects in One Place
-    </h1>
-
-    <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {[1, 2, 3].map((item) => (
-        <div
-          key={item}
-          className="h-40 animate-pulse rounded-xl border border-slate-800 bg-slate-900"
-        />
-      ))}
-    </div>
-  </section>
-) : (
-  projects.length === 0 ? (
-    <div className="mt-6 rounded-xl border border-white bg-slate-900 p-8 text-center">
-      <div className="text-4xl">📁</div>
-
-      <h2 className="mt-3 text-lg font-semibold text-slate-200">
-        No projects yet
-      </h2>
-
-      <p className="mt-1 text-sm text-slate-500">
-        Create your first project to see it here.
-      </p>
-    </div>
-  ) : (
-    <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {projects.map((proj) => (
-        <div
-          key={proj.id}
-          className="rounded-xl border border-slate-800 bg-slate-900 p-5 text-left shadow-md transition hover:border-blue-500/50 hover:bg-slate-800/80"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-2xl">
-              {proj.icon || "📁"}
-            </span>
-
-            {proj.createdAt && (
-              <span className="text-xs text-slate-500">
-                {new Date(proj.createdAt).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-
-          <h3 className="mt-3 truncate text-lg font-semibold text-slate-100">
-            {proj.name}
-          </h3>
-
-          {proj.description && (
-            <p className="mt-2 line-clamp-2 text-sm text-slate-400">
-              {proj.description}
-            </p>
-          )}
-
-          {proj.language && (
-            <span className="mt-3 inline-block rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">
-              {proj.language}
-            </span>
-          )}
-
-          <button
-            type="button"
-            disabled={mutation.isPending}
-            onClick={() => deleteProject(proj.id)}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/40 px-3 py-2 text-red-400 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <TrashIcon size={20} />
-
-            {mutation.isPending ? "Deleting..." : "Delete"}
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-)}
-
-    </section>
-  );
+  const projects = data?.projects ?? [];
+  return <div className="site-page">
+    <SiteHeader workspace />
+    <main id="main-content" className="site-container workspace-main">
+      <Link href="/main/project" className="text-link manage-back"><ArrowLeftIcon size={17} aria-hidden="true" /> Back to projects</Link>
+      <div className="workspace-heading"><div><h1>Manage projects</h1><p>Review your workspaces and remove the ones you no longer need.</p></div></div>
+      {error ? <div role="alert" className="empty-workspace"><h2>Couldn&apos;t load your projects.</h2><p>Please try again in a moment.</p><button className="secondary-button" onClick={() => refetch()}>Try again</button></div>
+        : isLoading ? <div className="projects-grid" role="status"><span className="sr-only">Loading projects...</span>{[0, 1, 2].map(item => <div key={item} className="skeleton-card" aria-hidden="true"><div className="skeleton-block" /><div className="skeleton-block" /><div className="skeleton-block" /></div>)}</div>
+        : !projects.length ? <div className="empty-workspace"><span className="project-symbol"><CodeIcon size={24} aria-hidden="true" /></span><h2>No projects yet.</h2><p>Your projects will appear here once you create a workspace.</p><Link href="/main/project" className="primary-button">Go to workspace</Link></div>
+        : <div className="projects-grid">{projects.map(project => <article key={project.id} className="project-card manage-card">
+          <div className="project-top"><span className="project-symbol"><CodeIcon size={23} aria-hidden="true" /></span><span className="project-language">{project.language || "typescript"}</span></div>
+          <h2 title={project.name}>{project.name}</h2>
+          <p className="project-card-description">{project.description || "Your collaborative development workspace."}</p>
+          <div className="project-meta"><time dateTime={project.createdAt}>Created {new Date(project.createdAt).toLocaleDateString()}</time></div>
+          <button type="button" className="danger-button" disabled={mutation.isPending} onClick={() => mutation.mutate(project.id)} aria-label={`Delete ${project.name}`}><TrashIcon size={18} aria-hidden="true" />{mutation.isPending && mutation.variables === project.id ? "Deleting..." : "Delete project"}</button>
+        </article>)}</div>}
+    </main>
+  </div>;
 }

@@ -37,11 +37,6 @@ export async function createProjectWorkspace(
     projectId
   );
 
-  console.log(
-    "Creating local project workspace:",
-    projectPath
-  );
-
   await fs.mkdir(projectPath, {
     recursive: true,
   });
@@ -55,17 +50,9 @@ export async function createProjectWorkspace(
       );
     }
 
-    console.log(
-      "Local project workspace created:",
-      projectPath
-    );
-
     return projectPath;
   } catch (error) {
-    console.error(
-      "Failed to create local workspace:",
-      error
-    );
+    console.error("Operation failed in src/lib/defaultProject.ts.");
 
     await fs.rm(projectPath, {
       recursive: true,
@@ -323,10 +310,6 @@ http://localhost:3000
 `,
     },
   ];
-
-  console.log(
-    `Generated ${files.length} project files in memory`
-  );
 
   return files;
 }

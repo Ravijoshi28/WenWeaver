@@ -6,7 +6,6 @@ const TEMPLATE_DIR = path.resolve(
   "templates"
 );
 
-
 const templates: Record<string, string> = {
 
   "package.json": `
@@ -36,8 +35,6 @@ const templates: Record<string, string> = {
 }
 `,
 
-
-
 "next.config.ts": `
 import type { NextConfig } from "next";
 
@@ -47,8 +44,6 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 `,
-
-
 
 "tsconfig.json": `
 {
@@ -98,8 +93,6 @@ export default nextConfig;
 }
 `,
 
-
-
 ".env": `
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
@@ -108,8 +101,6 @@ export default nextConfig;
 // This file should not be edited
 // see https://nextjs.org/docs
 `,
-
-
 
 ".gitignore": `
 node_modules
@@ -142,17 +133,14 @@ EXPOSE 3000
 
 CMD ["sh", "-c", "while true; do sleep 3600; done"]`,
 
-
 "app/layout.tsx": `
 import type { Metadata } from "next";
 import "./globals.css";
-
 
 export const metadata: Metadata = {
   title: "My Next App",
   description: "Created with Web Weaver"
 };
-
 
 export default function RootLayout({
   children,
@@ -170,8 +158,6 @@ export default function RootLayout({
 
 }
 `,
-
-
 
 "app/page.tsx": `
 export default function Home(){
@@ -193,20 +179,16 @@ export default function Home(){
 }
 `,
 
-
-
 "app/globals.css": `
 * {
   box-sizing: border-box;
 }
-
 
 html,
 body {
   margin:0;
   padding:0;
 }
-
 
 body {
   font-family:
@@ -217,8 +199,6 @@ body {
 `
 
 };
-
-
 
 export async function seedTemplates(destination:string){
 
@@ -232,7 +212,6 @@ export async function seedTemplates(destination:string){
       relativePath
     );
 
-
     await fs.mkdir(
       path.dirname(filePath),
       {
@@ -240,26 +219,12 @@ export async function seedTemplates(destination:string){
       }
     );
 
-
     await fs.writeFile(
       filePath,
       content.trim()
     );
 
-
-    console.log(
-      `Created template: ${relativePath}`
-    );
-
   }
 
-
-  console.log(
-    "✅ Next.js template created"
-  );
-
 }
-
-
-
 

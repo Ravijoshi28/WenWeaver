@@ -16,10 +16,7 @@ const wss = new WebSocketServer({
   port: PORT,
 });
 
-console.log(`Terminal server running on ws://localhost:${PORT}`);
-
 wss.on("connection", (socket: WebSocket) => {
-  console.log("Terminal connected");
 
   const ptyProcess = pty.spawn(shell, [], {
     name: "xterm-256color",
@@ -67,7 +64,6 @@ wss.on("connection", (socket: WebSocket) => {
   });
 
   socket.on("close", () => {
-    console.log("Terminal disconnected");
 
     try {
       ptyProcess.kill();

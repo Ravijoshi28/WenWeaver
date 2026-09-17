@@ -13,7 +13,7 @@ interface verification{
 export async  function LoginCall(formData:Logindata){
 
     const res=await AxiosInstance.post('/auth/login',formData)
-    console.log(res);
+
     return res.data;
 
 }
@@ -21,8 +21,7 @@ export async  function LoginCall(formData:Logindata){
 export async  function SignUpCall(data:Logindata){
 
     const res=await AxiosInstance.post('/auth/signup',data)
-   
-    console.log(res);
+
     return res;
 
 }
@@ -30,17 +29,15 @@ export async  function SignUpCall(data:Logindata){
 export async function VerifyCall(verify:verification){
 
     const res=await AxiosInstance.post('/resend/verify',verify)
-   
-    console.log(res);
+
     return res.data;
 
 }
 
 export async function sendOTP(email:string){
-    console.log(email)
+
     const res=await AxiosInstance.post('/resend',{email})
-   
-    console.log(res);
+
     return res.data;
 
 }

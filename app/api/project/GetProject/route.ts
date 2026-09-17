@@ -70,9 +70,6 @@ export async function GET() {
   },
 });
 
-    
-
-
     if (projects.length === 0) {
       return NextResponse.json(
         {
@@ -85,7 +82,6 @@ export async function GET() {
       );
     }
 
-
     return NextResponse.json(
       {
         message: "Project fetched",
@@ -96,9 +92,7 @@ export async function GET() {
       }
     );
 
-
-  } catch (error) {
-    console.log(error);
+  } catch  {
 
     return NextResponse.json(
       {

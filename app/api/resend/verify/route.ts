@@ -2,17 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
-
 export async function POST(req:NextRequest){
 
     try{
         const {otp,email,}=await req.json()
-        console.log(otp,email);
+
         const enteredOtpHash = crypto
   .createHash("sha256")
   .update(otp)
   .digest("hex");
-
 
   //no domain so it will verify any email with and any random otp
 
@@ -72,8 +70,8 @@ export async function POST(req:NextRequest){
 
         return NextResponse.json({message:"user verified"},{status:200})
     }
-    catch(error){
-        console.log(error);
+    catch{
+
          return NextResponse.json({message:"Server error"},{status:400})
 
     }

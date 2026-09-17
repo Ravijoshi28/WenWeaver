@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("USER ID:", user.id);
     const rateLimit=await createProjectRateLimit.limit(
       `createProject:${user.id}`
     )
@@ -107,16 +106,6 @@ export async function POST(req: NextRequest) {
     const useSupabase =
       process.env.USE_SUPABASE_STORAGE === "true";
 
-    console.log(
-      "NODE_ENV:",
-      process.env.NODE_ENV
-    );
-
-    console.log(
-      "USE_SUPABASE_STORAGE:",
-      useSupabase
-    );
-
     // -----------------------------------------
     // CREATE DATABASE PROJECT
     // -----------------------------------------
@@ -131,19 +120,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(
-      "PROJECT CREATED:",
-      project.id
-    );
-
     // =================================================
     // DEVELOPMENT
     // =================================================
 
     if (!isProduction) {
-      console.log(
-        "DEVELOPMENT MODE: creating local workspace"
-      );
 
       // -----------------------------------------
       // CREATE LOCAL WORKSPACE
@@ -156,24 +137,11 @@ export async function POST(req: NextRequest) {
           "nextjs"
         );
 
-      console.log(
-        "LOCAL WORKSPACE CREATED:",
-        projectPath
-      );
-
       // -----------------------------------------
       // UPLOAD LOCAL WORKSPACE TO SUPABASE
       // -----------------------------------------
 
       if (useSupabase) {
-        console.log(
-          "UPLOADING LOCAL WORKSPACE TO SUPABASE:"
-        );
-
-        console.log(
-          "PROJECT PATH:",
-          projectPath
-        );
 
         await uploadProjectToSupabase(
           projectPath,
@@ -181,9 +149,6 @@ export async function POST(req: NextRequest) {
           project.id
         );
 
-        console.log(
-          "PROJECT UPLOADED TO SUPABASE"
-        );
       }
     }
 
@@ -192,9 +157,6 @@ export async function POST(req: NextRequest) {
     // =================================================
 
     else {
-      console.log(
-        "PRODUCTION MODE: generating project directly"
-      );
 
       // -----------------------------------------
       // PRODUCTION REQUIRES SUPABASE
@@ -213,10 +175,6 @@ export async function POST(req: NextRequest) {
       const files =
         await generateProjectFiles("nextjs");
 
-      console.log(
-        `Generated ${files.length} project files`
-      );
-
       // -----------------------------------------
       // UPLOAD FILES DIRECTLY TO SUPABASE
       // -----------------------------------------
@@ -227,9 +185,6 @@ export async function POST(req: NextRequest) {
         files
       );
 
-      console.log(
-        "PROJECT UPLOADED DIRECTLY TO SUPABASE"
-      );
     }
 
     // -----------------------------------------
@@ -254,10 +209,7 @@ export async function POST(req: NextRequest) {
       }
     );
   } catch (error) {
-    console.error(
-      "CREATE PROJECT ERROR:",
-      error
-    );
+    console.error("Operation failed in app/api/project/route.ts.");
 
     return NextResponse.json(
       {

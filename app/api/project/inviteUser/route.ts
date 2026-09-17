@@ -51,7 +51,6 @@ export async function POST(req: NextRequest) {
   );
 }
 
-
     const { user, projectId } = await req.json();
 
     if (!user.email?.trim() || !projectId?.trim()) {
@@ -138,7 +137,7 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Add collaborator error:", error);
+    console.error("Operation failed in app/api/project/inviteUser/route.ts.");
 
     return NextResponse.json(
       { message: "Internal server error" },

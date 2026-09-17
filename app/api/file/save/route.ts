@@ -405,30 +405,6 @@ async function saveFilesToSupabase(
     );
   }
 
-  console.log(
-    "======================================"
-  );
-
-  console.log(
-    "☁️ SAVING PROJECT TO SUPABASE"
-  );
-
-  console.log(
-    `Owner: ${ownerId}`
-  );
-
-  console.log(
-    `Project: ${projectId}`
-  );
-
-  console.log(
-    `Files: ${flattened.length}`
-  );
-
-  console.log(
-    "======================================"
-  );
-
   const expectedPaths =
     new Set<string>();
 
@@ -467,10 +443,6 @@ async function saveFilesToSupabase(
         content,
         "utf8"
       );
-
-    console.log(
-      `☁️ Uploading ${filePath} (${buffer.length} bytes)`
-    );
 
     const {
       error,
@@ -513,11 +485,8 @@ async function saveFilesToSupabase(
       await listSupabaseFiles(
         projectFolder
       );
-  } catch (error) {
-    console.warn(
-      "⚠️ Could not list existing files:",
-      error
-    );
+  } catch  {
+    console.warn("Operation failed in app/api/file/save/route.ts.");
   }
 
   const stalePaths =
@@ -531,9 +500,6 @@ async function saveFilesToSupabase(
   if (
     stalePaths.length > 0
   ) {
-    console.log(
-      `🗑 Removing ${stalePaths.length} stale files`
-    );
 
     const {
       error,
@@ -550,10 +516,6 @@ async function saveFilesToSupabase(
       );
     }
   }
-
-  console.log(
-    "✅ SUPABASE SAVE COMPLETE"
-  );
 
   return {
     filesSaved:
@@ -574,9 +536,9 @@ export async function POST(
   try {
 
      const cookieStore = await cookies();
-    
+
         const token = cookieStore.get("accessToken")?.value;
-    
+
         if (!token) {
           return NextResponse.json(
             {
@@ -587,9 +549,9 @@ export async function POST(
             }
           );
         }
-    
+
         const user = VerifyAccessToken(token);
-    
+
         if (!user) {
           return NextResponse.json(
             {
@@ -625,7 +587,6 @@ export async function POST(
       },
     });
         }
-
 
     const body =
       await req.json();
@@ -728,10 +689,7 @@ export async function POST(
       }
     );
   } catch (error) {
-    console.error(
-      "❌ SAVE PROJECT ERROR:",
-      error
-    );
+    console.error("Operation failed in app/api/file/save/route.ts.");
 
     return NextResponse.json(
       {
