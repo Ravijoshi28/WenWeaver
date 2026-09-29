@@ -21,7 +21,10 @@ import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { MonacoBinding } from "y-monaco";
 
+import { SaveSession, snapshotFiles } from "@/lib/save-plan";
+
 import { useProjectState } from "@/useStates/projectStates";
+import { useShallow } from "zustand/react/shallow";
 
 import { useMutation } from "@tanstack/react-query";
 
@@ -175,72 +178,6 @@ function getLanguageFromFileName(
 // UPDATE FILE IN TREE
 // =====================================================
 
-function updateFileInTree(
-  files: FileNode[],
-  targetPath: string,
-  content: string
-): {
-  files: FileNode[];
-  updated: boolean;
-} {
-  const normalizedTarget =
-    normalizePath(targetPath);
-
-  let updated = false;
-
-  function updateRecursive(
-    nodes: FileNode[],
-    parentPath = ""
-  ): FileNode[] {
-    return nodes.map((node) => {
-      const currentPath = getNodePath(
-        node,
-        parentPath
-      );
-
-      // FILE
-      if (
-        node.type === "file" &&
-        normalizePath(currentPath) ===
-          normalizedTarget
-      ) {
-        updated = true;
-
-        return {
-          ...node,
-          path: currentPath,
-          content,
-        };
-      }
-
-      // FOLDER
-      if (
-        node.type === "folder" &&
-        Array.isArray(node.children)
-      ) {
-        return {
-          ...node,
-          path: currentPath,
-          children: updateRecursive(
-            node.children,
-            currentPath
-          ),
-        };
-      }
-
-      return {
-        ...node,
-        path: currentPath,
-      };
-    });
-  }
-
-  return {
-    files: updateRecursive(files),
-    updated,
-  };
-}
-
 // =====================================================
 // MAIN EDITOR
 // =====================================================
@@ -251,7 +188,7 @@ export function MainEditor() {
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [previewKey, setPreviewKey] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState("connecting");
-  const files = useProjectState(state => state.files);
+  const hasFiles = useProjectState(state => state.files.length > 0);
   const visibleView = compact && view === "split" ? "editor" : view;
 
   // ===================================================
@@ -259,7 +196,9 @@ export function MainEditor() {
   // ===================================================
 
   const selectedFile = useProjectState(
-    (state) => state.selectedFile
+    useShallow((state) => state.selectedFile
+      ? { name: state.selectedFile.name, path: state.selectedFile.path }
+      : null)
   );
 
   const project = useProjectState(
@@ -383,61 +322,8 @@ export function MainEditor() {
             .files as FileNode[];
         }
 
-        const state =
-          useProjectState.getState();
-
-        const files =
-          state.files as FileNode[];
-
-        const result =
-          updateFileInTree(
-            files,
-            normalizedFilePath,
-            content
-          );
-
-        if (!result.updated) {
-          console.warn("Operation failed in app/main/Editor/Monaco.tsx.");
-
-          return files;
-        }
-
-        const selected =
-          state.selectedFile;
-
-        const selectedPath =
-          normalizePath(
-            selected?.path ??
-              selected?.name
-          );
-
-        useProjectState.setState({
-          files: result.files,
-
-          selectedFile:
-            selectedPath ===
-            normalizedFilePath
-              ? {
-                  ...(selected ?? {}),
-
-                  name:
-                    selected?.name ??
-                    normalizedFilePath
-                      .split("/")
-                      .pop() ??
-                    "",
-
-                  path:
-                    normalizedFilePath,
-
-                  type: "file",
-
-                  content,
-                }
-              : selected,
-        });
-
-        return result.files;
+        useProjectState.getState().updateFileContent(normalizedFilePath, content);
+        return useProjectState.getState().files;
       },
       []
     );
@@ -503,6 +389,8 @@ export function MainEditor() {
   // SAVE MUTATION
   // ===================================================
 
+  const saveSession = useRef<{ key: string; session: SaveSession } | null>(null);
+
   const saveMutation =
     useMutation({
       mutationFn: ({
@@ -515,10 +403,12 @@ export function MainEditor() {
         files: FileNode[];
       }) => {
 
-        return SaveFile(
-          ownerId,
-          projectId,
-          files
+        const key = `${ownerId}/${projectId}`;
+        if (saveSession.current?.key !== key) {
+          saveSession.current = { key, session: new SaveSession() };
+        }
+        return saveSession.current.session.save(snapshotFiles(files), plan =>
+          SaveFile(ownerId, projectId, files, plan)
         );
       },
 
@@ -856,7 +746,7 @@ export function MainEditor() {
 
     const provider =
       new WebsocketProvider(
-        "wss://webweaver-m0is.onrender.com",
+        process.env.NEXT_PUBLIC_YJS_URL || "wss://webweaver-m0is.onrender.com",
         room,
         ydoc,
         {
@@ -1164,8 +1054,8 @@ export function MainEditor() {
           {!compact && <button type="button" aria-pressed={visibleView === "split"} onClick={() => setView("split")}><LayoutIcon size={17} aria-hidden="true" /><span>Split</span></button>}
         </div>
         <div className="editor-actions">
-          <button type="button" className="secondary-button" onClick={handleSave} disabled={isSaving || !files.length} title="Save project (Ctrl or Cmd + S)"><FloppyDiskIcon size={17} aria-hidden="true" />{isSaving ? "Saving..." : "Save"}</button>
-          <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || !files.length}><PlayIcon size={17} aria-hidden="true" />{isRunning ? "Starting..." : "Run"}</button>
+          <button type="button" className="secondary-button" onClick={handleSave} disabled={isSaving || !hasFiles} title="Save project (Ctrl or Cmd + S)"><FloppyDiskIcon size={17} aria-hidden="true" />{isSaving ? "Saving..." : "Save"}</button>
+          <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || !hasFiles}><PlayIcon size={17} aria-hidden="true" />{isRunning ? "Starting..." : "Run"}</button>
         </div>
       </div>
       {(saveMutation.isError || runMutation.isError) && <div role="alert" className="editor-error">{saveMutation.isError ? "Could not save your files. Your edits are still in this workspace; try Save again." : "Could not start the preview. Check your project and try Run again."}</div>}
@@ -1177,7 +1067,7 @@ export function MainEditor() {
               path={currentPath}
               height="100%"
               width="100%"
-              defaultValue={selectedFile.content ?? defaultContent}
+              defaultValue={useProjectState.getState().selectedFile?.content ?? defaultContent}
               language={currentLanguage}
               theme={dark ? "vs-dark" : "vs"}
               beforeMount={handleBeforeMount}
@@ -1200,7 +1090,7 @@ export function MainEditor() {
           <div className="preview-canvas" data-device={previewDevice}>
             {isRunning ? <div className="pane-empty" role="status"><PlayIcon size={34} weight="light" aria-hidden="true" /><h2>Starting your preview.</h2><p>Preparing the workspace and installing project dependencies. This can take a moment.</p></div>
               : previewUrl ? <iframe key={previewUrl + previewKey} src={previewUrl} className="project-preview-frame" title="Project Preview" />
-              : <div className="pane-empty"><MonitorIcon size={36} weight="light" aria-hidden="true" /><h2>See what you&apos;re building.</h2><p>Run your project to launch a preview here. Keep coding alongside it, or give it the full workspace.</p><button type="button" className="primary-button" onClick={handleRun} disabled={!files.length}><PlayIcon size={17} aria-hidden="true" /> Run project</button></div>}
+              : <div className="pane-empty"><MonitorIcon size={36} weight="light" aria-hidden="true" /><h2>See what you&apos;re building.</h2><p>Run your project to launch a preview here. Keep coding alongside it, or give it the full workspace.</p><button type="button" className="primary-button" onClick={handleRun} disabled={!hasFiles}><PlayIcon size={17} aria-hidden="true" /> Run project</button></div>}
           </div>
           <div className="pane-footer"><span>{isRunning ? "Starting sandbox" : previewUrl ? "Preview available" : "Not running"}</span><span>{previewDevice === "mobile" ? "Mobile viewport" : "Fit to panel"}</span></div>
         </section>

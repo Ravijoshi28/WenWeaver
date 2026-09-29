@@ -1,3 +1,6 @@
+import type { SavePlan } from "@/lib/save-plan";
+import { measureOperation } from "@/lib/client-performance";
+import { isAxiosError } from "axios";
 import AxiosInstance from "@/lib/axiosInstance";
 
 // =====================================================
@@ -39,7 +42,8 @@ export type PreviewResponse = {
 export async function SaveFile(
   ownerId: string,
   id: string,
-  files: FileNode[]
+  files: FileNode[],
+  plan?: SavePlan,
 ): Promise<SaveFileResponse> {
   if (!ownerId) {
     throw new Error("ownerId is required.");
@@ -49,19 +53,22 @@ export async function SaveFile(
     throw new Error("projectId is required.");
   }
 
-  if (!Array.isArray(files) || files.length === 0) {
+  if (!Array.isArray(files)) {
     throw new Error("Project files are required.");
   }
 
-  const res = await AxiosInstance.post<SaveFileResponse>(
+  const res = await measureOperation("webweaver:save-request", () => AxiosInstance.post<SaveFileResponse>(
     "/file/save",
     {
       ownerId,
       id,
-      files,
+      files: plan?.files ?? files,
+      mode: plan?.mode ?? "full",
+      deletedPaths: plan?.deletedPaths ?? [],
     }
-  );
+  ));
 
+  if (!res.data.success) throw new Error(res.data.message || "Save failed.");
   return res.data;
 }
 
@@ -87,13 +94,13 @@ export async function runPreview(
     // ---------------------------------------------------
 
     const res =
-      await AxiosInstance.post<PreviewResponse>(
+      await measureOperation("webweaver:preview-request", () => AxiosInstance.post<PreviewResponse>(
         "/file/preview",
         {
           projectId,
           files,
         }
-      );
+      ));
 
     // ---------------------------------------------------
     // Axios already parsed JSON
@@ -119,14 +126,13 @@ export async function runPreview(
     }
 
     return data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Operation failed in ApiCalls/docker/docker.ts.");
 
     // Axios error response
-    const message =
-      error?.response?.data?.message ||
-      error?.message ||
-      "Failed to start preview.";
+    const message = isAxiosError<{ message?: string }>(error)
+      ? error.response?.data?.message || error.message
+      : error instanceof Error ? error.message : "Failed to start preview.";
 
     throw new Error(message);
   }

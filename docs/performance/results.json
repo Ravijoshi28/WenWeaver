@@ -1,0 +1,101 @@
+{
+  "recordedAt": "2026-09-29T15:52:50.981Z",
+  "baselineCommit": "8f0ac28138f7fd0c7a83658a68e8d73e36e0ac97",
+  "testedHead": "8f0ac28138f7fd0c7a83658a68e8d73e36e0ac97",
+  "environment": {
+    "node": "v24.15.0",
+    "platform": "win32",
+    "release": "10.0.26200",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz"
+  },
+  "methodology": "6 alternating before/after batches; editor 30 warmup + 100 measured edits/batch; WebSocket 10 warmup + 50 measured edits/batch, 2 real loopback clients, 1000-file receiver workspace. ~1 KiB per initial file. Node JSON serialization and in-memory sessionStorage sink, not browser storage or Monaco paint. No hosted services called.",
+  "editor": [
+    {
+      "files": 10,
+      "before": {
+        "n": 600,
+        "medianMs": 0.06320000000005166,
+        "p95Ms": 0.13350000000002638,
+        "writes": 1200,
+        "bytes": 12243360
+      },
+      "after": {
+        "n": 600,
+        "medianMs": 0.02479999999991378,
+        "p95Ms": 0.052800000000047476,
+        "writes": 600,
+        "bytes": 6121680
+      }
+    },
+    {
+      "files": 100,
+      "before": {
+        "n": 600,
+        "medianMs": 0.831899999999905,
+        "p95Ms": 1.672200000000089,
+        "writes": 1200,
+        "bytes": 131529360
+      },
+      "after": {
+        "n": 600,
+        "medianMs": 0.24339999999995143,
+        "p95Ms": 0.4560999999999922,
+        "writes": 600,
+        "bytes": 65764680
+      }
+    },
+    {
+      "files": 1000,
+      "before": {
+        "n": 600,
+        "medianMs": 9.348899999999958,
+        "p95Ms": 14.990600000000086,
+        "writes": 1200,
+        "bytes": 1325685360
+      },
+      "after": {
+        "n": 600,
+        "medianMs": 3.359099999999671,
+        "p95Ms": 5.014600000000428,
+        "writes": 600,
+        "bytes": 662842680
+      }
+    }
+  ],
+  "saves": [
+    {
+      "files": 10,
+      "beforeBytes": 11116,
+      "afterBytes": 1210,
+      "beforeUploads": 10,
+      "afterUploads": 1
+    },
+    {
+      "files": 100,
+      "beforeBytes": 110521,
+      "afterBytes": 1210,
+      "beforeUploads": 100,
+      "afterUploads": 1
+    },
+    {
+      "files": 1000,
+      "beforeBytes": 1105651,
+      "afterBytes": 1210,
+      "beforeUploads": 1000,
+      "afterUploads": 1
+    }
+  ],
+  "websocket": {
+    "before": {
+      "n": 300,
+      "medianMs": 9.837500000001455,
+      "p95Ms": 19.40820000000167
+    },
+    "after": {
+      "n": 300,
+      "medianMs": 4.313099999999395,
+      "p95Ms": 7.090400000000955
+    },
+    "convergence": "All 720 edits converged"
+  }
+}

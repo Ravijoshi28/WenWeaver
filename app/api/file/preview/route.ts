@@ -75,6 +75,14 @@ export async function POST(
   req: NextRequest
 ) {
   let sandbox: Sandbox | undefined;
+  const started = performance.now();
+  let stage = started;
+  const timings: Record<string, number> = {};
+  const finishStage = (name: string) => {
+    const now = performance.now();
+    timings[name] = Number((now - stage).toFixed(2));
+    stage = now;
+  };
 
   try {
 
@@ -114,8 +122,8 @@ export async function POST(
     {
       error:
         "Too many preview requests. Please try again later.",
-    }
-
+    },
+    { status: 429 }
   );
 }
 
@@ -191,6 +199,7 @@ export async function POST(
     // CREATE SANDBOX
     // ==================================================
 
+    finishStage("validation");
     sandbox =
       await Sandbox.create({
         runtime: "node24",
@@ -207,6 +216,7 @@ export async function POST(
     // WRITE FILES
     // ==================================================
 
+    finishStage("provision");
     await sandbox.writeFiles(
       flattened.map(
         (file) => ({
@@ -225,6 +235,7 @@ export async function POST(
     // CHECK PACKAGE.JSON
     // ==================================================
 
+    finishStage("writeFiles");
     const packageCheck =
       await sandbox.runCommand({
         cmd: "cat",
@@ -272,6 +283,7 @@ export async function POST(
     // INSTALL DEPENDENCIES
     // ==================================================
 
+    finishStage("packageCheck");
     const install =
       await sandbox.runCommand({
         cmd: "npm",
@@ -321,56 +333,7 @@ export async function POST(
       );
     }
 
-    // ==================================================
-    // CHECK NEXT COMMAND
-    // ==================================================
-
-    const nextVersion =
-      await sandbox.runCommand({
-        cmd: "npx",
-
-        args: [
-          "next",
-          "--version",
-        ],
-
-        cwd:
-          "/vercel/sandbox",
-      });
-
-    const nextStdout =
-      await nextVersion.stdout();
-
-    const nextStderr =
-      await nextVersion.stderr();
-
-    if (
-      nextVersion.exitCode !== 0
-    ) {
-      console.error(
-        "❌ Next.js is not executable"
-      );
-
-      await sandbox.stop();
-
-      sandbox = undefined;
-
-      return NextResponse.json(
-        {
-          success: false,
-
-          message:
-            "Next.js installation is invalid",
-
-          stdout:
-            nextStdout,
-
-          stderr:
-            nextStderr,
-        },
-        { status: 500 }
-      );
-    }
+    finishStage("install");
 
     // ======================================================
 // START NEXT.JS
@@ -407,7 +370,10 @@ for (let attempt = 1; attempt <= 15; attempt++) {
       cmd: "curl",
 
       args: [
-        "-I",
+        "--fail",
+        "--silent",
+        "--output",
+        "/dev/null",
         "--max-time",
         "2",
         "http://127.0.0.1:3000",
@@ -465,15 +431,18 @@ const previewUrl =
 // RETURN
 // ======================================================
 
+finishStage("startup");
+timings.total = Number((performance.now() - started).toFixed(2));
 return NextResponse.json({
+  timingsMs: timings,
   success: true,
 
   projectId,
 
   previewUrl,
-});
+}, { headers: { "Server-Timing": Object.entries(timings).map(([name, duration]) => `${name};dur=${duration}`).join(", ") } });
 
-  } catch (error) {
+  } catch {
     // ==================================================
     // GLOBAL ERROR
     // ==================================================

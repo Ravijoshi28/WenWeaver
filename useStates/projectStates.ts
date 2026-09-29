@@ -1,3 +1,4 @@
+import { updateFileTree } from "@/lib/file-tree";
 import { create } from "zustand";
 import {
   persist,
@@ -87,85 +88,6 @@ function normalizePath(
 /* =========================================================
    UPDATE FILE TREE
 ========================================================= */
-
-function updateFileTree(
-  nodes: FileNode[],
-  targetPath: string,
-  content: string,
-  parentPath = ""
-): {
-  files: FileNode[];
-  updated: boolean;
-} {
-  const normalizedTarget =
-    normalizePath(targetPath);
-
-  let updated = false;
-
-  const updatedNodes =
-    nodes.map((node) => {
-      const currentPath =
-        normalizePath(
-          parentPath
-            ? `${parentPath}/${node.name}`
-            : node.name
-        );
-
-      /* =====================================================
-         FILE
-      ===================================================== */
-
-      if (
-        node.type === "file" &&
-        currentPath === normalizedTarget
-      ) {
-        updated = true;
-
-        return {
-          ...node,
-          path: currentPath,
-          content,
-        };
-      }
-
-      /* =====================================================
-         FOLDER
-      ===================================================== */
-
-      if (
-        node.type === "folder" &&
-        Array.isArray(node.children)
-      ) {
-        const result =
-          updateFileTree(
-            node.children,
-            normalizedTarget,
-            content,
-            currentPath
-          );
-
-        if (result.updated) {
-          updated = true;
-        }
-
-        return {
-          ...node,
-          path: currentPath,
-          children: result.files,
-        };
-      }
-
-      return {
-        ...node,
-        path: currentPath,
-      };
-    });
-
-  return {
-    files: updatedNodes,
-    updated,
-  };
-}
 
 /* =========================================================
    FIND FILE
@@ -368,6 +290,8 @@ export const useProjectState =
             return;
           }
 
+          if (result.files === currentFiles) return;
+
           const selected =
             get().selectedFile;
 
@@ -439,12 +363,13 @@ export const useProjectState =
         version: 3,
 
         migrate: (
-          persistedState: any,
+          persistedState: unknown,
           version
         ) => {
-          if (!persistedState) {
+          if (!persistedState || typeof persistedState !== "object") {
             return undefined;
           }
+          const state = persistedState as ProjectState;
 
           /*
            * Version 1/2 may contain an invalid
@@ -453,18 +378,18 @@ export const useProjectState =
 
           if (version < 3) {
             return {
-              ...persistedState,
+              ...state,
 
               selectedFile:
-                persistedState
+                state
                   ?.selectedFile
                   ?.path
                   ? {
-                      ...persistedState.selectedFile,
+                      ...state.selectedFile,
 
                       path:
                         normalizePath(
-                          persistedState
+                          state
                             .selectedFile
                             .path
                         ),
@@ -473,7 +398,7 @@ export const useProjectState =
             };
           }
 
-          return persistedState;
+          return state;
         },
       }
     )

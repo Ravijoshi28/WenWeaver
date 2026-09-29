@@ -1,3 +1,4 @@
+import { mapConcurrent } from "@/lib/map-concurrent";
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -327,48 +328,17 @@ async function listSupabaseFiles(
 
   const result: string[] = [];
 
-  async function walk(
-    currentFolder: string
-  ): Promise<void> {
-    const {
-      data,
-      error,
-    } =
-      await supabaseAdmin.storage
-        .from(SUPABASE_BUCKET)
-        .list(
-          currentFolder,
-          {
-            limit: 1000,
-            offset: 0,
-          }
-        );
-
-    if (error) {
-      throw error;
-    }
-
-    for (
-      const item of data ?? []
-    ) {
-      const itemPath =
-        currentFolder
-          ? `${currentFolder}/${item.name}`
-          : item.name;
-
-      /*
-       * Supabase Storage returns metadata
-       * for actual files.
-       */
-      const isFile =
-        item.metadata !== null &&
-        item.metadata !== undefined;
-
-      if (isFile) {
-        result.push(itemPath);
-      } else {
-        await walk(itemPath);
+  async function walk(currentFolder: string): Promise<void> {
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabaseAdmin.storage.from(SUPABASE_BUCKET)
+        .list(currentFolder, { limit: 1000, offset, sortBy: { column: "name", order: "asc" } });
+      if (error) throw error;
+      for (const item of data ?? []) {
+        const itemPath = currentFolder ? `${currentFolder}/${item.name}` : item.name;
+        if (item.metadata !== null && item.metadata !== undefined) result.push(itemPath);
+        else await walk(itemPath);
       }
+      if (!data || data.length < 1000) break;
     }
   }
 
@@ -384,7 +354,9 @@ async function listSupabaseFiles(
 async function saveFilesToSupabase(
   ownerId: string,
   projectId: string,
-  files: ProjectFile[]
+  files: ProjectFile[],
+  mode: "full" | "patch" = "full",
+  deletedPaths: string[] = [],
 ) {
   if (!supabaseAdmin) {
     throw new Error(
@@ -394,11 +366,11 @@ async function saveFilesToSupabase(
 
   await ensureBucket();
 
-  const flattened =
-    flattenFiles(files);
+  // Resolve duplicate paths before concurrent uploads, preserving last-write order.
+  const flattened = [...new Map(flattenFiles(files).map(file => [file.path, file])).values()];
 
   if (
-    flattened.length === 0
+    flattened.length === 0 && mode === "full"
   ) {
     throw new Error(
       "No files were supplied"
@@ -412,17 +384,13 @@ async function saveFilesToSupabase(
   // UPLOAD FILES
   // =======================================================
 
-  for (
-    const file of flattened
-  ) {
+  await mapConcurrent(flattened, 4, async (file) => {
     const filePath =
       normalizeProjectPath(
         file.name
       );
 
-    if (!filePath) {
-      continue;
-    }
+    if (!filePath) return;
 
     const storagePath =
       getSupabaseFilePath(
@@ -469,7 +437,7 @@ async function saveFilesToSupabase(
         `Failed to save ${filePath}: ${error.message}`
       );
     }
-  }
+  });
 
   // =======================================================
   // DELETE FILES THAT NO LONGER EXIST
@@ -480,17 +448,16 @@ async function saveFilesToSupabase(
 
   let existingPaths: string[] = [];
 
-  try {
+  if (mode === "full") {
     existingPaths =
       await listSupabaseFiles(
         projectFolder
       );
-  } catch  {
-    console.warn("Operation failed in app/api/file/save/route.ts.");
   }
 
-  const stalePaths =
-    existingPaths.filter(
+  const stalePaths = mode === "patch"
+    ? deletedPaths.map(filePath => getSupabaseFilePath(ownerId, projectId, filePath)).filter(filePath => !expectedPaths.has(filePath))
+    : existingPaths.filter(
       (existingPath) =>
         !expectedPaths.has(
           existingPath
@@ -533,6 +500,7 @@ async function saveFilesToSupabase(
 export async function POST(
   req: NextRequest
 ) {
+  const started = performance.now();
   try {
 
      const cookieStore = await cookies();
@@ -595,12 +563,17 @@ export async function POST(
       ownerId,
       id: projectId,
       files,
+      mode = "full",
+      deletedPaths = [],
     } = body;
 
     if (
       !ownerId ||
       !projectId ||
-      !Array.isArray(files)
+      !Array.isArray(files) ||
+      !["full", "patch"].includes(mode) ||
+      !Array.isArray(deletedPaths) ||
+      deletedPaths.some((value: unknown) => typeof value !== "string" || !value || value.startsWith("/") || value.includes("\\") || value.split("/").some(part => !part || part === "." || part === ".."))
     ) {
       return NextResponse.json(
         {
@@ -654,7 +627,9 @@ export async function POST(
           return await saveFilesToSupabase(
             ownerId,
             projectId,
-            files as ProjectFile[]
+            files as ProjectFile[],
+            mode,
+            deletedPaths,
           );
         }
       );
@@ -672,6 +647,8 @@ export async function POST(
 
         supabaseSynced: true,
 
+        durationMs: Number((performance.now() - started).toFixed(2)),
+        mode,
         filesSaved:
           result.filesSaved,
 
@@ -686,6 +663,7 @@ export async function POST(
       },
       {
         status: 200,
+        headers: { "Server-Timing": `save;dur=${(performance.now() - started).toFixed(2)}` },
       }
     );
   } catch (error) {

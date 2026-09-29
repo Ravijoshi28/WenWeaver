@@ -6,6 +6,12 @@ WebWeaver brings project management, a Monaco code editor, real-time collaborati
 
 Built with **Next.js 16 · React 19 · TypeScript · Yjs · Prisma · PostgreSQL**.
 
+## Performance evaluation
+
+See [PERFORMANCE.md](PERFORMANCE.md) for the optimization explanations, measured before/after results, test conditions, and limitations. Run `npm run test:performance` for correctness checks and `npm run bench:performance` to regenerate the report and [raw result summary](docs/performance/results.json). Measurements use synthetic projects and a local Yjs WebSocket server; they do not claim hosted-service latency improvements.
+
+Editing now preserves unchanged file-tree branches and skips duplicate state writes. After the first successful save in an editor session, subsequent saves send changed files and explicit deletions, with up to four uploads in flight. A failed save forces a full retry. Preview responses include stage timings and save responses include total server duration.
+
 ## Workspace preview
 
 ![WebWeaver editor with file explorer, Monaco, and preview panels](docs/images/editor-light-1440.png)
@@ -145,7 +151,7 @@ The generated client is written to `generated/prisma`. Migration files are in `p
 
 ### 4. Configure collaboration
 
-The editor currently points to a fixed hosted WebSocket endpoint in `app/main/Editor/Monaco.tsx`. For an entirely local setup, change the URL passed to `WebsocketProvider` to `ws://localhost:1234` and start the collaboration server:
+The editor uses `NEXT_PUBLIC_YJS_URL`, falling back to the existing hosted endpoint. For an entirely local setup, set `NEXT_PUBLIC_YJS_URL=ws://localhost:1234` in `.env`, restart Next.js, and start the collaboration server:
 
 ```bash
 npm run start:yjs
@@ -200,6 +206,8 @@ yjs-server.mjs             Collaboration server
 | `npm run lint` | Run ESLint |
 | `npm run build` | Build the Next.js application with webpack |
 | `npm start` | Serve a completed production build |
+| `npm run test:performance` | Check editor updates, incremental saves, and upload scheduling |
+| `npm run bench:performance` | Regenerate local before/after measurements and `PERFORMANCE.md` |
 
 Application console warnings/errors are restricted to fixed literal messages by ESLint, to help prevent credentials, user data, response bodies, and raw exceptions from being logged.
 
@@ -209,9 +217,9 @@ This is a portfolio project under active development. The implementation include
 
 - Run the collaboration server on a host that supports persistent WebSockets. Its current implementation does not authenticate room access or persist Yjs documents across restarts.
 - Set `USE_SUPABASE_STORAGE=true` for production project creation. Configure the storage, database, email, rate-limit, and Sandbox credentials in the deployment environment.
-- Replace the fixed collaboration endpoint with your deployment URL. The standalone terminal client still targets localhost.
+- Set `NEXT_PUBLIC_YJS_URL` to your collaboration deployment URL before building. The standalone terminal client still targets localhost.
 - Google sign-in and password reset are not implemented. The invitation form offers Viewer and Editor roles; complete authorization enforcement still requires a separate review.
-- The production build, TypeScript, and focused UI lint checks pass. Full-source lint still reports two existing explicit `any` types in `ApiCalls/docker/docker.ts` and `useStates/projectStates.ts`.
+- Performance validation details and remaining hosted-service measurements are documented in [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Design and validation
 
