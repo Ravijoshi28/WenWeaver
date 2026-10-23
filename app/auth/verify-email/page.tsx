@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { sendOTP, VerifyCall } from "@/ApiCalls/auth/authenticate";
 import { AuthFrame } from "@/app/components/auth-frame";
+import { Note } from "@phosphor-icons/react";
 
 export default function VerifyEmail() {
   const [otp, setOtp] = useState("");
@@ -13,7 +14,9 @@ export default function VerifyEmail() {
   const mutation = useMutation({ mutationFn: VerifyCall });
   const resend = useMutation({ mutationFn: sendOTP });
   return <AuthFrame title="One last step." description="Request a code, then verify your email to open your workspace.">
+    
     <form className="form-stack" onSubmit={event => { event.preventDefault(); mutation.mutate({ otp, email }); }}>
+      <b><span>! Currently any 6 digit code will verify the user Ignore the error popup...</span></b>
       <div className="field"><label htmlFor="verify-email">Email address</label><input ref={emailInput} id="verify-email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={event => { setEmail(event.target.value); mutation.reset(); resend.reset(); }} /></div>
       <div className="field"><label htmlFor="verification-code">Verification code</label><input id="verification-code" name="otp" type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" maxLength={6} pattern="[0-9]{6}" required className="otp-input" value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, ""))} /><p className="field-help">Use the code sent to your registered email.</p></div>
       {mutation.isError && <p role="alert" className="form-error">The code could not be verified. Check it or request a new one.</p>}
