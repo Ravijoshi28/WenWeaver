@@ -5,7 +5,7 @@ export const RATE_LIMITS = {
   },
 
   auth: {
-    requests: 10,
+    requests: 3000,
     window: "1 m",
   },
 
