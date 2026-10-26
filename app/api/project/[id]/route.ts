@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
+import { invalidateProjectListCache } from "@/lib/cache/projects";
 
 export async function DELETE(
   req: NextRequest,
@@ -49,6 +50,8 @@ export async function DELETE(
         id: id,
       },
     });
+
+    await invalidateProjectListCache(user.id);
 
     const pathToProject = path.join(
       process.cwd(),

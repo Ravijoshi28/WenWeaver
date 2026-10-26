@@ -1058,7 +1058,7 @@ export function MainEditor() {
           <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || !hasFiles}><PlayIcon size={17} aria-hidden="true" />{isRunning ? "Starting..." : "Run"}</button>
         </div>
       </div>
-      {(saveMutation.isError || runMutation.isError) && <div role="alert" className="editor-error">{saveMutation.isError ? "Could not save your files. Your edits are still in this workspace; try Save again." : "Could not start the preview. Check your project and try Run again."}</div>}
+      {(saveMutation.isError || runMutation.isError) && <div role="alert" className="editor-error">{saveMutation.isError ? "Could not save your files. Your edits are still in this workspace; try Save again." : runMutation.error instanceof Error ? `Could not start the preview: ${runMutation.error.message}` : "Could not start the preview. Check your project and try Run again."}</div>}
       <div className="editor-panes" data-view={visibleView}>
         <section className="code-pane" aria-label="Code editor" hidden={visibleView === "preview"}>
           <div className="pane-header"><div className="pane-title"><FileCodeIcon size={17} aria-hidden="true" /><span title={currentPath}>{selectedFile ? currentFileName : "No file selected"}</span></div><span className="language-label">{selectedFile ? currentLanguage.replace("typescriptreact", "TSX") : "Monaco"}</span></div>

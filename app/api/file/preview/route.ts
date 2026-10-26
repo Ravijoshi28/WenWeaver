@@ -5,6 +5,9 @@ import { VerifyAccessToken } from "@/lib/verify";
 import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
+// Dependency installation and Next.js startup can exceed Vercel's short
+// default function duration. The platform still applies the deployment's cap.
+export const maxDuration = 300;
 
 type FileNode = {
   name: string;
@@ -18,6 +21,43 @@ type FlatFile = {
   path: string;
   content: string;
 };
+
+function sandboxCredentials() {
+  const token = process.env.VERCEL_TOKEN;
+  const teamId = process.env.VERCEL_TEAM_ID;
+  const projectId = process.env.VERCEL_PROJECT_ID;
+
+  // Vercel deployments receive an OIDC token automatically. The explicit
+  // credentials make the route work on other production hosts as well.
+  if (token && teamId && projectId) {
+    return { token, teamId, projectId };
+  }
+
+  return {};
+}
+
+function hasSandboxCredentials() {
+  return Boolean(
+    process.env.VERCEL_URL ||
+      process.env.VERCEL_OIDC_TOKEN ||
+      (process.env.VERCEL_TOKEN &&
+        process.env.VERCEL_TEAM_ID &&
+        process.env.VERCEL_PROJECT_ID)
+  );
+}
+
+function safeFailureReason(value: unknown, fallback: string) {
+  const detail =
+    value instanceof Error ? value.message : typeof value === "string" ? value : "";
+
+  if (!detail) return fallback;
+
+  return detail
+    .replace(/((?:token|authorization|password)\s*[=:]\s*)\S+/gi, "$1[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
 
 // ======================================================
 // FLATTEN FILE TREE
@@ -101,12 +141,14 @@ export async function POST(
           );
         }
 
-        const user = VerifyAccessToken(token);
+        let user: { id: string; type: "access" };
 
-        if (!user) {
+        try {
+          user = VerifyAccessToken(token);
+        } catch {
           return NextResponse.json(
             {
-              message: "Not authorised",
+              message: "Your session has expired. Please sign in again.",
             },
             {
               status: 401,
@@ -195,6 +237,20 @@ export async function POST(
       );
     }
 
+    // Do not let the SDK fall back to its interactive device-login flow in a
+    // server request. It cannot be completed there and produces the opaque
+    // "Failed to parse token response" error.
+    if (!hasSandboxCredentials()) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Vercel Sandbox is not configured. Set VERCEL_OIDC_TOKEN, or VERCEL_TOKEN, VERCEL_TEAM_ID, and VERCEL_PROJECT_ID.",
+        },
+        { status: 503 }
+      );
+    }
+
     // ==================================================
     // CREATE SANDBOX
     // ==================================================
@@ -203,6 +259,8 @@ export async function POST(
     sandbox =
       await Sandbox.create({
         runtime: "node24",
+
+        ...sandboxCredentials(),
 
         timeout:
           1000 * 60 * 10,
@@ -272,8 +330,7 @@ export async function POST(
           success: false,
           message:
             "package.json is missing or invalid",
-          stderr:
-            packageStderr,
+          reason: safeFailureReason(packageStderr, "package.json could not be read."),
         },
         { status: 500 }
       );
@@ -290,6 +347,12 @@ export async function POST(
 
         args: [
           "install",
+          // Existing user projects may have an older Next.js package manifest
+          // with a newer React range. npm otherwise stops on that peer warning
+          // before the preview server can be started.
+          "--legacy-peer-deps",
+          "--no-audit",
+          "--no-fund",
         ],
 
         cwd:
@@ -318,7 +381,12 @@ export async function POST(
           success: false,
 
           message:
-            "npm install failed",
+            "Dependency installation failed",
+
+          reason: safeFailureReason(
+            installStderr || installStdout,
+            "npm install exited with a non-zero status."
+          ),
 
           exitCode:
             install.exitCode,
@@ -442,12 +510,12 @@ return NextResponse.json({
   previewUrl,
 }, { headers: { "Server-Timing": Object.entries(timings).map(([name, duration]) => `${name};dur=${duration}`).join(", ") } });
 
-  } catch {
+  } catch (error) {
     // ==================================================
     // GLOBAL ERROR
     // ==================================================
 
-    console.error("Preview generation failed.");
+    console.error("Preview generation failed.", error);
 
     // ==================================================
     // CLEANUP
@@ -463,11 +531,23 @@ return NextResponse.json({
       }
     }
 
+    const message =
+      error instanceof Error &&
+      error.message.includes("Vercel authorization server")
+        ? "Vercel Sandbox authentication failed. Refresh VERCEL_OIDC_TOKEN or configure VERCEL_TOKEN, VERCEL_TEAM_ID, and VERCEL_PROJECT_ID."
+        : "Preview failed. Please try again.";
+
+    const reason = safeFailureReason(
+      error,
+      "The preview service did not return an error detail."
+    );
+
     return NextResponse.json(
       {
         success: false,
 
-        message: "Preview failed. Please try again.",
+        message,
+        reason,
       },
       { status: 500 }
     );

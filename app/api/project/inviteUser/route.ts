@@ -3,6 +3,7 @@ import { generalRateLimit } from "@/lib/rate-limiter";
 import { VerifyAccessToken } from "@/lib/verify";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateProjectListCache } from "@/lib/cache/projects";
 
 export async function POST(req: NextRequest) {
   try {
@@ -128,6 +129,8 @@ export async function POST(req: NextRequest) {
         role: user.role ?? "VIEWER",
       },
     });
+
+    await invalidateProjectListCache(authenticatedUser.id, invitedUser.id);
 
     return NextResponse.json(
       {

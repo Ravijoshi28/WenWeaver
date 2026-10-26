@@ -101,7 +101,8 @@ const ipLimit =
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "strict",
-  maxAge: 30*60*60,
+  maxAge: 60 * 10,
+  path: "/",
   });
 
 cookieStore.set("refreshToken", refreshToken, {

@@ -129,7 +129,7 @@ Create a private Supabase bucket named `Files`. The upload/read helpers currentl
 
 Configure the sender in `app/api/resend/route.ts` to use an address authorized by your Resend account. Registration currently opens the verification screen without sending a code automatically; enter the registered email and use **Resend OTP** to request the first code.
 
-For previews, provide Vercel Sandbox credentials. The installed SDK supports `VERCEL_OIDC_TOKEN`; its local setup guidance is to link a Vercel project and pull its environment:
+For previews, provide Vercel Sandbox credentials. Deploying this route on Vercel uses its managed OIDC credentials. For local development, its local setup guidance is to link a Vercel project and pull its environment:
 
 ```bash
 npx vercel link
@@ -137,6 +137,8 @@ npx vercel env pull
 ```
 
 These commands require your own Vercel account and project. Keep the resulting token in the ignored environment file.
+
+When deploying somewhere other than Vercel, set `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, and `VERCEL_PROJECT_ID` instead. The token must be scoped to that Vercel team and project.
 
 ### 3. Initialize the database
 

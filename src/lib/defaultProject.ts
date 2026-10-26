@@ -112,9 +112,9 @@ export async function generateProjectFiles(
           },
 
           dependencies: {
-            next: "15.0.0",
-            react: "^19.0.0",
-            "react-dom": "^19.0.0",
+            next: "16.3.0",
+            react: "19.2.8",
+            "react-dom": "19.2.8",
           },
 
           devDependencies: {

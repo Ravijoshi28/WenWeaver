@@ -3,6 +3,7 @@ import { generalRateLimit } from "@/lib/rate-limiter";
 import { VerifyAccessToken } from "@/lib/verify";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { cacheProjects, getCachedProjects } from "@/lib/cache/projects";
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -50,6 +51,15 @@ export async function GET() {
 }
 
   try {
+    const cachedProjects = await getCachedProjects<unknown[]>(user.id);
+
+    if (cachedProjects) {
+      return NextResponse.json(
+        { message: "Project fetched", projects: cachedProjects },
+        { status: 200, headers: { "X-Cache": "HIT" } }
+      );
+    }
+
     const projects = await prisma.project.findMany({
   where: {
     OR: [
@@ -70,15 +80,15 @@ export async function GET() {
   },
 });
 
+    await cacheProjects(user.id, projects);
+
     if (projects.length === 0) {
       return NextResponse.json(
         {
           message: "No project found",
           projects: [],
         },
-        {
-          status: 200,
-        }
+        { status: 200, headers: { "X-Cache": "MISS" } }
       );
     }
 
@@ -89,6 +99,7 @@ export async function GET() {
       },
       {
         status: 200,
+        headers: { "X-Cache": "MISS" },
       }
     );
 

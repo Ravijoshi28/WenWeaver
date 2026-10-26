@@ -10,6 +10,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { createProjectRateLimit } from "@/lib/rate-limiter";
+import { invalidateProjectListCache } from "@/lib/cache/projects";
 
 export async function POST(req: NextRequest) {
   try {
@@ -119,6 +120,8 @@ export async function POST(req: NextRequest) {
         isPublic: false,
       },
     });
+
+    await invalidateProjectListCache(user.id);
 
     // =================================================
     // DEVELOPMENT

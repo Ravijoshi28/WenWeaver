@@ -3,15 +3,28 @@ import { VerifyRefreshToken } from "@/lib/verify";
 import { prisma } from "@/lib/prisma";
 import { AccessToken } from "@/lib/cookieGenerator";
 
+function unauthorisedResponse() {
+  const response = NextResponse.json(
+    { message: "Your session has expired. Please sign in again." },
+    { status: 401 }
+  );
+
+  response.cookies.set("accessToken", "", { path: "/", maxAge: 0 });
+  response.cookies.set("refreshToken", "", {
+    path: "/api/auth/refresh",
+    maxAge: 0,
+  });
+
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const refreshToken =
       req.cookies.get("refreshToken")?.value;
 
     if (!refreshToken) {
-      return NextResponse.redirect(
-        new URL("/login", req.url)
-      );
+      return unauthorisedResponse();
     }
 
     const payload = VerifyRefreshToken(refreshToken);
@@ -23,16 +36,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (!user || user.refreshToken !== refreshToken) {
-      return NextResponse.redirect(
-        new URL("/login", req.url)
-      );
+      return unauthorisedResponse();
     }
 
     const newAccessToken = AccessToken(user.id);
 
-    const response = NextResponse.redirect(
-      new URL("/main", req.url)
-    );
+    const response = NextResponse.json({ message: "Access token refreshed" });
 
     response.cookies.set(
       "accessToken",
@@ -40,17 +49,15 @@ export async function POST(req: NextRequest) {
       {
         httpOnly: true,
         sameSite: "strict",
-        secure: true,
-        maxAge: 30*60*60,
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 60 * 10,
+        path: "/",
       }
     );
 
     return response;
 
   } catch {
-
-    return NextResponse.redirect(
-      new URL("/login", req.url)
-    );
+    return unauthorisedResponse();
   }
 }

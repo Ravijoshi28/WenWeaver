@@ -33,6 +33,7 @@ export type PreviewResponse = {
   projectId: string;
   previewUrl: string;
   message?: string;
+  reason?: string;
 };
 
 // =====================================================
@@ -130,8 +131,8 @@ export async function runPreview(
     console.error("Operation failed in ApiCalls/docker/docker.ts.");
 
     // Axios error response
-    const message = isAxiosError<{ message?: string }>(error)
-      ? error.response?.data?.message || error.message
+    const message = isAxiosError<{ message?: string; reason?: string }>(error)
+      ? error.response?.data?.reason || error.response?.data?.message || error.message
       : error instanceof Error ? error.message : "Failed to start preview.";
 
     throw new Error(message);
