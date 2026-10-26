@@ -1,11 +1,11 @@
 export const RATE_LIMITS = {
   general: {
-    requests: 10,
+    requests: 3000,
     window: "1 m",
   },
 
   auth: {
-    requests: 3000,
+    requests: 10,
     window: "1 m",
   },
 
